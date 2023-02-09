@@ -1,10 +1,37 @@
 # Controller
 
-It uses SLD to get input from joystick.
+It uses SDL2 to get input from the joystick.
 
 
-## Compiling
+## C version
+
+
+### Compiling
 
 ```bash
-gcc main.c -o bin/controller -lSDL2
+cd c
+gcc main.c -o build/controller -lSDL2
+```
+
+### Running
+
+```bash
+cd c
+./build/controller
+```
+
+## Rust version
+
+### Compiling
+
+```bash
+cd rust
+cargo build
+```
+
+### Running
+
+```bash
+cd rust
+cargo run
 ```
