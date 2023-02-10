@@ -1,30 +1,14 @@
 extern crate sdl2;
 
-use sdl2::event::Event;
+use std::sync::{Arc, Mutex};
+use sdl2::{
+    controller::{Button, GameController, Axis},
+    event::Event,
+};
 
-const JOYSTICK_DEADZONE: i16 = 8000;
-const JOYSTICK_BUTTON_X: u8 = 0;
-const JOYSTICK_BUTTON_CIRCLE: u8 = 1;
-const JOYSTICK_BUTTON_SQUARE: u8 = 2;
-const JOYSTICK_BUTTON_TRIANGLE: u8 = 3;
-const JOYSTICK_BUTTON_SELECT: u8 = 4;
-const JOYSTICK_BUTTON_START: u8 = 6;
-const JOYSTICK_BUTTON_L3: u8 = 7;
-const JOYSTICK_BUTTON_R3: u8 = 8;
-const JOYSTICK_BUTTON_L1: u8 = 9;
-const JOYSTICK_BUTTON_R1: u8 = 10;
-const JOYSTICK_BUTTON_ARROW_UP: u8 = 11;
-const JOYSTICK_BUTTON_ARROW_DOWN: u8 = 12;
-const JOYSTICK_BUTTON_ARROW_LEFT: u8 = 13;
-const JOYSTICK_BUTTON_ARROW_RIGHT: u8 = 14;
-const JOYSTICK_AXIS_LEFT_X: u8 = 0;
-const JOYSTICK_AXIS_LEFT_Y: u8 = 1;
-const JOYSTICK_AXIS_RIGHT_X: u8 = 2;
-const JOYSTICK_AXIS_RIGHT_Y: u8 = 3;
-const JOYSTICK_AXIS_L2: u8 = 4;
-const JOYSTICK_AXIS_R2: u8 = 5;
+const JOYSTICK_DEADZONE: i16 = 4000;
 
-
+#[derive(Debug)]
 struct ControllerState {
     x: bool,
     circle: bool,
@@ -34,171 +18,132 @@ struct ControllerState {
     start: bool,
     l1: bool,
     r1: bool,
-    l2: i16,
-    r2: i16,
+    l2: u16,
+    r2: u16,
     yaw: i16,
     throttle: i16,
     pitch: i16,
     roll: i16
 }
 
-fn print_controller_state(state: &ControllerState) {
-    println!("{{");
-    println!("  X: {}", state.x);
-    println!("  Circle: {}", state.circle);
-    println!("  Square: {}", state.square);
-    println!("  Triangle: {}", state.triangle);
-    println!("  Select: {}", state.select);
-    println!("  Start: {}", state.start);
-    println!("  L1: {}", state.l1);
-    println!("  R1: {}", state.r1);
-    println!("  L2: {}", state.l2);
-    println!("  R2: {}", state.r2);
-    println!("  Yaw: {}", state.yaw);
-    println!("  Throttle: {}", state.throttle);
-    println!("  Pitch: {}", state.pitch);
-    println!("  Roll: {}", state.roll);
-    println!("}}");
-}
+impl ControllerState {
+    fn new() -> Self {
+        ControllerState {
+            x: false,
+            circle: false,
+            square: false,
+            triangle: false,
+            select: false,
+            start: false,
+            l1: false,
+            r1: false,
+            l2: 0,
+            r2: 0,
+            yaw: 0,
+            throttle: 0,
+            pitch: 0,
+            roll: 0
+        }
+    }
 
-fn update_controller_state(state: &mut ControllerState, event: &Event) {
-    match event {
-        Event::JoyAxisMotion { axis_idx, value, .. } => {
-            match *axis_idx {
-                JOYSTICK_AXIS_LEFT_X => {
-                    state.yaw = *value;
-                },
-                JOYSTICK_AXIS_LEFT_Y => {
-                    state.throttle = *value;
-                },
-                JOYSTICK_AXIS_RIGHT_X => {
-                    state.roll = *value;
-                },
-                JOYSTICK_AXIS_RIGHT_Y => {
-                    state.pitch = *value;
-                },
-                JOYSTICK_AXIS_L2 => {
-                    state.l2 = *value;
-                },
-                JOYSTICK_AXIS_R2 => {
-                    state.r2 = *value;
-                },
-                _ => {}
-            }
-        },
-        Event::JoyButtonDown { button_idx, .. } => {
-            match *button_idx {
-                JOYSTICK_BUTTON_X => {
-                    state.x = true;
-                },
-                JOYSTICK_BUTTON_CIRCLE => {
-                    state.circle = true;
-                },
-                JOYSTICK_BUTTON_SQUARE => {
-                    state.square = true;
-                },
-                JOYSTICK_BUTTON_TRIANGLE => {
-                    state.triangle = true;
-                },
-                JOYSTICK_BUTTON_SELECT => {
-                    state.select = true;
-                },
-                JOYSTICK_BUTTON_START => {
-                    state.start = true;
-                },
-                JOYSTICK_BUTTON_L1 => {
-                    state.l1 = true;
-                },
-                JOYSTICK_BUTTON_R1 => {
-                    state.r1 = true;
-                },
-                _ => {}
-            }
-        },
-        Event::JoyButtonUp { button_idx, .. } => {
-            match *button_idx {
-                JOYSTICK_BUTTON_X => {
-                    state.x = false;
-                },
-                JOYSTICK_BUTTON_CIRCLE => {
-                    state.circle = false;
-                },
-                JOYSTICK_BUTTON_SQUARE => {
-                    state.square = false;
-                },
-                JOYSTICK_BUTTON_TRIANGLE => {
-                    state.triangle = false;
-                },
-                JOYSTICK_BUTTON_SELECT => {
-                    state.select = false;
-                },
-                JOYSTICK_BUTTON_START => {
-                    state.start = false;
-                },
-                JOYSTICK_BUTTON_L1 => {
-                    state.l1 = false;
-                },
-                JOYSTICK_BUTTON_R1 => {
-                    state.r1 = false;
-                },
-                _ => {}
-            }
-        },
-        _ => {}
+    pub fn update_button(&mut self, button: Button, value: bool) {
+        match button {
+            Button::A => self.x = value,
+            Button::B => self.circle = value,
+            Button::X => self.square = value,
+            Button::Y => self.triangle = value,
+            Button::Back => self.select = value,
+            Button::Start => self.start = value,
+            Button::LeftShoulder => self.l1 = value,
+            Button::RightShoulder => self.r1 = value,
+            _ => {}
+        }
+    }
+
+    pub fn update_axis(&mut self, axis: Axis, value: i16) {
+        match axis {
+            Axis::LeftX => self.yaw = self.calculate_axis_value_with_deadzone(value),
+            Axis::LeftY => self.throttle = self.calculate_axis_value_with_deadzone(value),
+            Axis::RightX => self.roll = self.calculate_axis_value_with_deadzone(value),
+            Axis::RightY => self.pitch = self.calculate_axis_value_with_deadzone(value),
+            Axis::TriggerLeft => self.l2 = value as u16,
+            Axis::TriggerRight => self.r2 = value as u16,
+        }
+    }
+
+    fn calculate_axis_value_with_deadzone(&self, value: i16) -> i16 {
+        if value < -JOYSTICK_DEADZONE || value > JOYSTICK_DEADZONE {
+            value
+        } else {
+            0
+        }
     }
 }
 
 pub fn main() {
     let sdl_context = sdl2::init().unwrap();
-    let joystick_context = sdl_context.joystick().unwrap();
+    let controller_subsystem = sdl_context.game_controller().unwrap();
+
     let mut event_pump = sdl_context.event_pump().unwrap();
-    let mut joystick: Option<sdl2::joystick::Joystick> = None;
-    let mut controller_state = ControllerState {
-        x: false,
-        circle: false,
-        square: false,
-        triangle: false,
-        select: false,
-        start: false,
-        l1: false,
-        r1: false,
-        l2: -32768,
-        r2: -32768,
-        yaw: 0,
-        throttle: 0,
-        pitch: 0,
-        roll: 0
-    };
+    let controller_state = Arc::new(Mutex::new(ControllerState::new()));
+    let mut controller: Option<GameController> = None;
+    let running = Arc::new(Mutex::new(true));
 
-    println!("Initialized SDL2");
+    println!("Initialized!");
 
+    let thread_running = running.clone();
+    let thread_controller_state = controller_state.clone();
+    let debug_info= std::thread::spawn(move || loop {
+        if !*thread_running.lock().unwrap() {
+            println!("Shutting down debug thread...");
+            break;
+        }
+        println!("{:?}", thread_controller_state.lock().unwrap());
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    });
+
+    let main_running = running.clone();
+    let main_controller_state = controller_state.clone();
     'running: loop {
         for event in event_pump.poll_iter() {
-            update_controller_state(&mut controller_state, &event);
-
             match event {
-                Event::Quit {..} => break 'running,
-                Event::JoyDeviceAdded { timestamp: _, which } => {
-                    match joystick_context.open(which) {
-                        Ok(j) => {
-                            println!("Joystick attached: {}", j.name());
-                            joystick = Some(j);
-                        },
-                        Err(e) => {
-                            println!("Failed to open joystick: {}", e);
-                        }
+                Event::Quit {..} => {
+                    let mut running = main_running.lock().unwrap();
+                    *running = false;
+                    break 'running
+                },
+                Event::ControllerDeviceAdded { which, .. } => {
+                    if controller_subsystem.num_joysticks().unwrap() > 1 {
+                        println!("More than one controller attached. Only one can be used at a time");
+                    } else {
+                        let new_controller = controller_subsystem.open(which).unwrap();
+                        println!("Controller attached: {}", new_controller.name());
+                        controller = Some(new_controller);
                     }
                 },
-                Event::JoyDeviceRemoved { which, .. } => {
+                Event::ControllerDeviceRemoved { which, .. } => {
+                    controller = None;
                     println!("Joystick detached: {}", which);
                 },
-                Event::JoyButtonUp { button_idx, .. } => {
-                    if button_idx == JOYSTICK_BUTTON_ARROW_UP {
-                        print_controller_state(&controller_state);
-                    }
+                Event::ControllerAxisMotion { axis, value, .. } => {
+                    let mut controller_state = main_controller_state.lock().unwrap();
+                    controller_state.update_axis(axis, value);
+                },
+                Event::ControllerButtonDown { button, ..} => {
+                    let mut controller_state = main_controller_state.lock().unwrap();
+                    controller_state.update_button(button, true);
+                },
+                Event::ControllerButtonUp { button, .. } => {
+                    let mut controller_state = main_controller_state.lock().unwrap();
+                    controller_state.update_button(button, false);
                 },
                 _ => {}
             }
         }
     }
+
+    let c = controller.unwrap();
+    drop(c);
+    debug_info.join().unwrap();
+    println!("Shutdown!");
 }
