@@ -1,5 +1,8 @@
 use sdl2::{
-  controller::{Button, Axis},
+  controller::{Button, Axis, GameController},
+  event::Event,
+  GameControllerSubsystem,
+  EventPump,
 };
 
 const JOYSTICK_DEADZONE: i16 = 4000;
@@ -72,6 +75,85 @@ impl ControllerState {
             value
         } else {
             0
+        }
+    }
+}
+
+
+struct Sdl {
+    sdl_context: sdl2::Sdl,
+    controller_subsystem: GameControllerSubsystem,
+    event_pump: EventPump,
+    controller: Option<GameController>
+}
+
+pub struct Controller {
+    state: ControllerState,
+    sdl: Sdl,
+}
+
+impl Controller {
+    pub fn get_state(&self) -> &ControllerState {
+        &self.state
+    }
+
+    pub fn update_state(&mut self) -> bool {
+        let Sdl {
+            controller_subsystem,
+            event_pump,
+            controller,
+            ..
+        } = &mut self.sdl;
+
+        let controller_state = &mut self.state;
+
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Quit {..} => {
+                    return false;
+                },
+                Event::ControllerDeviceAdded { which, .. } => {
+                    if controller_subsystem.num_joysticks().unwrap() > 1 {
+                        println!("More than one controller attached. Only one can be used at a time");
+                    } else {
+                        let new_controller = controller_subsystem.open(which).unwrap();
+                        println!("Controller attached: {}", new_controller.name());
+                        *controller = Some(new_controller);
+                    }
+                },
+                Event::ControllerDeviceRemoved { which, .. } => {
+                    *controller = None;
+                    println!("Joystick detached: {}", which);
+                },
+                Event::ControllerAxisMotion { axis, value, .. } => {
+                    controller_state.update_axis(axis, value);
+                },
+                Event::ControllerButtonDown { button, ..} => {
+                    controller_state.update_button(button, true);
+                },
+                Event::ControllerButtonUp { button, .. } => {
+                    controller_state.update_button(button, false);
+                },
+                _ => {}
+            }
+        }
+
+        true
+    }
+}
+
+pub fn init() -> Controller {
+    let sdl_context = sdl2::init().unwrap();
+    let controller_subsystem = sdl_context.game_controller().unwrap();
+    let event_pump = sdl_context.event_pump().unwrap();
+
+    Controller {
+        state: ControllerState::new(),
+        sdl: Sdl {
+            sdl_context,
+            controller_subsystem,
+            event_pump,
+            controller: None
         }
     }
 }
