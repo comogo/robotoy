@@ -1,8 +1,7 @@
 use sdl2::{
-  controller::{Button, Axis, GameController},
-  event::Event,
-  GameControllerSubsystem,
-  EventPump,
+    controller::{Axis, Button, GameController},
+    event::Event,
+    EventPump, GameControllerSubsystem,
 };
 
 const JOYSTICK_DEADZONE: i16 = 4000;
@@ -22,7 +21,7 @@ pub struct ControllerState {
     yaw: i16,
     throttle: i16,
     pitch: i16,
-    roll: i16
+    roll: i16,
 }
 
 impl ControllerState {
@@ -41,7 +40,7 @@ impl ControllerState {
             yaw: 0,
             throttle: 0,
             pitch: 0,
-            roll: 0
+            roll: 0,
         }
     }
 
@@ -79,12 +78,11 @@ impl ControllerState {
     }
 }
 
-
 struct Sdl {
     sdl_context: sdl2::Sdl,
     controller_subsystem: GameControllerSubsystem,
     event_pump: EventPump,
-    controller: Option<GameController>
+    controller: Option<GameController>,
 }
 
 pub struct Controller {
@@ -109,31 +107,33 @@ impl Controller {
 
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit {..} => {
+                Event::Quit { .. } => {
                     return false;
-                },
+                }
                 Event::ControllerDeviceAdded { which, .. } => {
                     if controller_subsystem.num_joysticks().unwrap() > 1 {
-                        println!("More than one controller attached. Only one can be used at a time");
+                        println!(
+                            "More than one controller attached. Only one can be used at a time"
+                        );
                     } else {
                         let new_controller = controller_subsystem.open(which).unwrap();
                         println!("Controller attached: {}", new_controller.name());
                         *controller = Some(new_controller);
                     }
-                },
+                }
                 Event::ControllerDeviceRemoved { which, .. } => {
                     *controller = None;
                     println!("Joystick detached: {}", which);
-                },
+                }
                 Event::ControllerAxisMotion { axis, value, .. } => {
                     controller_state.update_axis(axis, value);
-                },
-                Event::ControllerButtonDown { button, ..} => {
+                }
+                Event::ControllerButtonDown { button, .. } => {
                     controller_state.update_button(button, true);
-                },
+                }
                 Event::ControllerButtonUp { button, .. } => {
                     controller_state.update_button(button, false);
-                },
+                }
                 _ => {}
             }
         }
@@ -153,7 +153,7 @@ pub fn init() -> Controller {
             sdl_context,
             controller_subsystem,
             event_pump,
-            controller: None
-        }
+            controller: None,
+        },
     }
 }

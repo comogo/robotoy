@@ -14,7 +14,7 @@ pub fn main() {
     'running: loop {
         let should_continue = controller.update_state();
 
-        if  should_continue == false {
+        if should_continue == false {
             break 'running;
         }
 
