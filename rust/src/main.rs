@@ -1,13 +1,16 @@
 extern crate sdl2;
 
 mod controller;
+mod radio;
 
 use controller::Controller;
+use radio::Radio;
 use std::time::Instant;
 
 pub fn main() {
     let mut controller: Controller = controller::init();
     let mut initial_time = Instant::now();
+    let mut radio = Radio::new();
 
     println!("Initialized!");
 

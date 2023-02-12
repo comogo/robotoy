@@ -22,6 +22,11 @@ cd c
 
 ## Rust version
 
+### Dependencies
+
+- [SDL2](https://github.com/Rust-SDL2/rust-sdl2)
+- [nrf24l01](https://github.com/rtxm/rust-nrf24l01)
+
 ### Compiling
 
 ```bash
