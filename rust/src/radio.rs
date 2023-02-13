@@ -1,30 +1,22 @@
 extern crate nrf24l01;
 
+use std::str::pattern::StrSearcher;
+
 use nrf24l01::{OperatingMode, PALevel, RXConfig, TXConfig, NRF24L01};
 
 enum RadioMode {
-    TX,
-    RX,
+    Tx,
+    Rx,
 }
 
 pub struct Radio {
     device: NRF24L01,
-    tx_config: TXConfig,
-    rx_config: RXConfig,
     mode: RadioMode,
+    channel: u8,
 }
 
 impl Radio {
     pub fn new(channel: u8) -> Self {
-        let tx_config = TXConfig {
-            pa_level: PALevel::Max,
-            channel: channel,
-            max_retries: 0,
-            retry_delay: 0,
-            pipe0_address: *b"radio",
-            data_rate: nrf24l01::DataRate::R250Kbps,
-        };
-
         let rx_config = RXConfig {
             channel: 108,
             pa_level: PALevel::Low,
@@ -34,12 +26,33 @@ impl Radio {
 
         let ce_pin: u64 = 25;
         let mut device = NRF24L01::new(ce_pin, 0).unwrap();
+        device.configure(&OperatingMode::TX(tx_config)).unwrap();
+        device.flush_output().unwrap();
+        let mode = RadioMode::Tx;
 
-        OperatingMode::Radio {
+        Radio {
             device,
-            tx_config,
-            rx_config,
             mode,
+            channel,
         }
+    }
+
+    pub fn send(&mut self, message: String) {
+        let mut device = self.device;
+
+        let config = TXConfig {
+            pa_level: PALevel::Max,
+            channel: self.channel,
+            max_retries: 0,
+            retry_delay: 0,
+            pipe0_address: *b"radio",
+            data_rate: nrf24l01::DataRate::R250Kbps,
+        };
+
+        device.configure(&OperatingMode::TX(config)).unwrap();
+        device.flush_output().unwrap();
+
+        device.push(0, message.as_bytes()).unwrap();
+        device.send().unwrap();
     }
 }

@@ -10,7 +10,7 @@ use std::time::Instant;
 pub fn main() {
     let mut controller: Controller = controller::init();
     let mut initial_time = Instant::now();
-    let mut radio = Radio::new();
+    let mut radio = Radio::new(100);
 
     println!("Initialized!");
 
