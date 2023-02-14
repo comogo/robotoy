@@ -1,58 +1,29 @@
-extern crate nrf24l01;
+extern crate embedded-nrf24l01;
+extern crate rppal;
 
-use std::str::pattern::StrSearcher;
-
-use nrf24l01::{OperatingMode, PALevel, RXConfig, TXConfig, NRF24L01};
-
-enum RadioMode {
-    Tx,
-    Rx,
-}
+use embedded_nrf24l01::NRF24L01;
+use rppal::{spi, spi::{Spi}, gpio, gpio::{Gpio}};
 
 pub struct Radio {
     device: NRF24L01,
-    mode: RadioMode,
-    channel: u8,
 }
 
 impl Radio {
-    pub fn new(channel: u8) -> Self {
-        let rx_config = RXConfig {
-            channel: 108,
-            pa_level: PALevel::Low,
-            pipe0_address: *b"radio",
-            ..Default::default()
-        };
+    pub fn new(ce_pin: u8, csn_pin: u8) -> Self {
+        let gpio: Gpio = Gpio::new().unwrap();
+        let mut ce: gpio::OutputPin = gpio.get(ce_pin).unwrap().into_output();
+        let mut csn: gpio::OutputPin = gpio.get(csn_pin).unwrap().into_output();
+        let spi: Spi = Spi::new(
+            spi::Bus::Spi0,
+            spi::SlaveSelect::Ss0,
+            1_000_000,
+            spi::Mode::Mode0,
+        ).unwrap();
 
-        let ce_pin: u64 = 25;
-        let mut device = NRF24L01::new(ce_pin, 0).unwrap();
-        device.configure(&OperatingMode::TX(tx_config)).unwrap();
-        device.flush_output().unwrap();
-        let mode = RadioMode::Tx;
+        let device = NRF24L01::new(ce, csn, spi).unwrap();
 
         Radio {
-            device,
-            mode,
-            channel,
+            device
         }
-    }
-
-    pub fn send(&mut self, message: String) {
-        let mut device = self.device;
-
-        let config = TXConfig {
-            pa_level: PALevel::Max,
-            channel: self.channel,
-            max_retries: 0,
-            retry_delay: 0,
-            pipe0_address: *b"radio",
-            data_rate: nrf24l01::DataRate::R250Kbps,
-        };
-
-        device.configure(&OperatingMode::TX(config)).unwrap();
-        device.flush_output().unwrap();
-
-        device.push(0, message.as_bytes()).unwrap();
-        device.send().unwrap();
     }
 }
