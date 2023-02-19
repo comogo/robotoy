@@ -22,11 +22,13 @@ const REG_TX_ADDR: Register = 0x10;
 const REG_DYNPD: Register = 0x1C;
 const REG_FEATURE: Register = 0x1D;
 
+#[derive(Debug)]
 pub enum DeviceError {
     SpiError(spi::Error),
     InvalidChannel,
 }
 
+#[derive(Debug)]
 pub enum RadioError {
     DeviceError(DeviceError),
     GpioError(gpio::Error),
@@ -45,6 +47,7 @@ enum Power {
     _0dBm,
 }
 
+#[derive(Debug)]
 struct Device {
     spi: Spi,
     ce: gpio::OutputPin,
@@ -164,6 +167,7 @@ impl Device {
     }
 }
 
+#[derive(Debug)]
 pub struct Radio {
     device: Device,
     ce_pin: OutputPin,

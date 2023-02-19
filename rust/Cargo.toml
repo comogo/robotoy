@@ -6,6 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-embedded-nrf24l01 = "0.2.0"
 rppal = { version = "0.14.1", features = ["hal"] }
 sdl2 = "0.35.2"
