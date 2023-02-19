@@ -8,13 +8,9 @@ use radio::Radio;
 use std::time::Instant;
 
 pub fn main() {
-    let gpio = rppal::gpio::Gpio::new().unwrap();
-    let mut ce = gpio.get(17).unwrap().into_output();
-    let mut csn = gpio.get(25).unwrap().into_output();
-
     let mut controller: Controller = controller::init();
     let mut initial_time = Instant::now();
-    let mut radio = Radio::new(ce, csn);
+    let mut radio = Radio::new(10, 9);
 
     println!("Initialized!");
 
