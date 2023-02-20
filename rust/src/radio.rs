@@ -6,6 +6,8 @@ use rppal::{
     spi,
     spi::Spi,
 };
+use std::thread::sleep;
+use std::time::Duration;
 
 type Command = u8;
 type Register = u8;
@@ -39,17 +41,25 @@ pub enum RadioError {
     GpioError(gpio::Error),
 }
 
-enum DataRate {
+#[derive(Debug)]
+pub enum DataRate {
     _250Kbps,
     _1Mbps,
     _2Mbps,
 }
 
-enum Power {
+#[derive(Debug)]
+pub enum Power {
     _18dBm,
     _12dBm,
     _6dBm,
     _0dBm,
+}
+
+#[derive(Debug)]
+pub enum RadioMode {
+    Rx,
+    Tx,
 }
 
 #[derive(Debug)]
@@ -184,6 +194,23 @@ impl Device {
         self.write_register(REG_FEATURE, value)?;
         Ok(())
     }
+
+    /// Set the NRF24L01+ in RX mode, PWR_UP = 0, PRIM_RX = 0+.
+    pub fn set_tx_mode(&self) -> Result<(), DeviceError> {
+        self.write_register(REG_CONFIG, 0b0000_000)?;
+        Ok(())
+    }
+
+    /// Set the NRF24L01+ in RX mode, PWR_UP = 1, PRIM_RX = 1.
+    pub fn set_rx_mode(&self) -> Result<(), DeviceError> {
+        self.write_register(REG_CONFIG, 0b0000_011)?;
+        Ok(())
+    }
+
+    pub fn power_up(&self) -> Result<(), DeviceError> {
+        self.write_register(REG_CONFIG, 0b0000_001)?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -191,6 +218,7 @@ pub struct Radio {
     device: Device,
     ce_pin: OutputPin,
     csn_pin: OutputPin,
+    mode: RadioMode,
 }
 
 impl Radio {
@@ -214,16 +242,19 @@ impl Radio {
             device,
             ce_pin,
             csn_pin,
+            mode: RadioMode::Tx,
         })
     }
 
-    // Configure the NRF24L01+ to use 250Kbps data rate, 0dBm power, dynamic payload, and disable auto ack
+    /// Configure the NRF24L01+ to use 250Kbps data rate, 0dBm power,
+    /// dynamic payload, disable auto ack and TX mode.
     pub fn setup(&self) -> Result<(), DeviceError> {
         self.device
             .set_feature(BIT_FEATURE_EN_DPL | BIT_FEATURE_EN_DYN_ACK)?;
         self.device.set_rf(DataRate::_250Kbps, Power::_0dBm)?;
         self.device.set_dynamic_payload(true)?;
         self.device.set_auto_ack(false)?;
+        self.device.set_tx_mode()?;
         Ok(())
     }
 
@@ -235,6 +266,12 @@ impl Radio {
     pub fn set_address(&self, tx_address: [u8; 5], rx_address: [u8; 5]) -> Result<(), DeviceError> {
         self.device.set_rx_address(rx_address)?;
         self.device.set_tx_address(tx_address)?;
+        Ok(())
+    }
+
+    pub fn set_tx_mode(&mut self) -> Result<(), DeviceError> {
+        self.mode = RadioMode::Tx;
+        self.device.set_tx_mode()?;
         Ok(())
     }
 }
