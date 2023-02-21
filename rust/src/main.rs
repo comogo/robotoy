@@ -10,11 +10,16 @@ use std::time::Instant;
 pub fn main() {
     let mut controller: Controller = controller::init();
     let mut initial_time = Instant::now();
-    let radio = Radio::new(10, 9).unwrap();
+    let mut radio = Radio::new(10, 9).unwrap();
+    let rx_address: [u8; 5] = *b"from1";
+    let tx_address: [u8; 5] = *b"toDev";
 
     println!("Initialized!");
 
     radio.setup().unwrap();
+    radio.set_address(tx_address, rx_address).unwrap();
+    radio.set_channel(100).unwrap();
+    radio.set_tx_mode().unwrap();
 
     'running: loop {
         let should_continue = controller.update_state();

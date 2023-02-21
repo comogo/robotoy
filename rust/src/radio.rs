@@ -4,6 +4,7 @@ use rppal::{
     gpio,
     gpio::{Gpio, OutputPin},
     spi,
+    spi::Segment,
     spi::Spi,
 };
 use std::thread::sleep;
@@ -14,6 +15,8 @@ type Register = u8;
 
 const CMD_R_REGISTER: Command = 0x00;
 const CMD_W_REGISTER: Command = 0x20;
+const CMD_FLUSH_TX: Command = 0xE1;
+const CMD_FLUSH_RX: Command = 0xE2;
 
 const REG_CONFIG: Register = 0x00;
 const REG_EN_AA: Register = 0x01;
@@ -32,6 +35,7 @@ const BIT_FEATURE_EN_DPL: u8 = 0b0000_0100;
 #[derive(Debug)]
 pub enum DeviceError {
     SpiError(spi::Error),
+    GpioError(gpio::Error),
     InvalidChannel,
 }
 
@@ -66,7 +70,6 @@ pub enum RadioMode {
 struct Device {
     spi: Spi,
     ce: gpio::OutputPin,
-    csn: gpio::OutputPin,
 }
 
 impl Device {
@@ -77,21 +80,25 @@ impl Device {
         let spi: Spi = Spi::new(
             spi::Bus::Spi0,
             spi::SlaveSelect::Ss0,
-            10_000_000,
+            1_000_000,
             spi::Mode::Mode0,
         )
         .map_err(|e| DeviceError::SpiError(e))?;
 
-        Ok(Device { spi, ce, csn })
+        Ok(Device { spi, ce })
     }
 
-    fn command(&self, data_in: &mut [u8], data_out: &mut [u8]) -> Result<usize, DeviceError> {
+    fn command(&self, data_in: &mut [u8], data_out: &mut [u8]) -> Result<(), DeviceError> {
+        // self.spi
+        //     .transfer(data_in, data_out)
+        //     .map_err(|e| DeviceError::SpiError(e))
+
         self.spi
-            .transfer(data_in, data_out)
+            .transfer_segments(&[Segment::with_write(data_in), Segment::with_read(data_out)])
             .map_err(|e| DeviceError::SpiError(e))
     }
 
-    fn write_register(&self, register: Register, value: u8) -> Result<usize, DeviceError> {
+    fn write_register(&self, register: Register, value: u8) -> Result<(), DeviceError> {
         let mut response = [0u8; 2];
         self.command(&mut [CMD_W_REGISTER | register, value], &mut response)
     }
@@ -101,6 +108,18 @@ impl Device {
         self.command(&mut [CMD_R_REGISTER | register, 0], &mut response)?;
 
         Ok((response[0], response[1]))
+    }
+
+    pub fn flush_tx(&self) -> Result<(), DeviceError> {
+        let mut response = [0u8; 1];
+        self.command(&mut [CMD_FLUSH_TX], &mut response)?;
+        Ok(())
+    }
+
+    pub fn flush_rx(&self) -> Result<(), DeviceError> {
+        let mut response = [0u8; 1];
+        self.command(&mut [CMD_FLUSH_RX], &mut response)?;
+        Ok(())
     }
 
     /// Set the data rate and the power level.
@@ -209,6 +228,12 @@ impl Device {
 
     pub fn power_up(&self) -> Result<(), DeviceError> {
         self.write_register(REG_CONFIG, 0b0000_001)?;
+        sleep(Duration::from_millis(5));
+        Ok(())
+    }
+
+    pub fn power_down(&self) -> Result<(), DeviceError> {
+        self.write_register(REG_CONFIG, 0b0000_000)?;
         Ok(())
     }
 }
@@ -270,8 +295,20 @@ impl Radio {
     }
 
     pub fn set_tx_mode(&mut self) -> Result<(), DeviceError> {
-        self.mode = RadioMode::Tx;
+        self.ce_pin.set_low();
+        sleep(Duration::from_micros(130));
+        self.device.flush_tx()?;
         self.device.set_tx_mode()?;
+        self.mode = RadioMode::Tx;
+        Ok(())
+    }
+
+    pub fn set_rx_mode(&mut self) -> Result<(), DeviceError> {
+        self.device.power_up()?;
+        self.mode = RadioMode::Rx;
+        self.device.set_rx_mode()?;
+        self.ce_pin.set_high();
+
         Ok(())
     }
 }
