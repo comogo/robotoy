@@ -13,6 +13,8 @@ use std::time::Duration;
 type Command = u8;
 type Register = u8;
 
+const SPI_SPEED: u32 = 5_000_000;
+
 const CMD_R_REGISTER: Command = 0x00;
 const CMD_W_REGISTER: Command = 0x20;
 const CMD_FLUSH_TX: Command = 0xE1;
@@ -27,6 +29,7 @@ const REG_RX_ADDR_P0: Register = 0x0A;
 const REG_TX_ADDR: Register = 0x10;
 const REG_DYNPD: Register = 0x1C;
 const REG_FEATURE: Register = 0x1D;
+const REG_RPD: Register = 0x09;
 
 const BIT_FEATURE_EN_DYN_ACK: u8 = 0b0000_0001;
 const BIT_FEATURE_EN_ACK_PAY: u8 = 0b0000_0010;
@@ -73,14 +76,13 @@ struct Device {
 }
 
 impl Device {
-    pub fn new(ce_pin: u8, csn_pin: u8) -> Result<Self, DeviceError> {
+    pub fn new(ce_pin: u8) -> Result<Self, DeviceError> {
         let gpio: Gpio = Gpio::new().unwrap();
-        let ce: gpio::OutputPin = gpio.get(ce_pin).unwrap().into_output();
-        let csn: gpio::OutputPin = gpio.get(csn_pin).unwrap().into_output();
+        let ce: gpio::OutputPin = gpio.get(ce_pin).unwrap().into_output_low();
         let spi: Spi = Spi::new(
             spi::Bus::Spi0,
             spi::SlaveSelect::Ss0,
-            1_000_000,
+            SPI_SPEED,
             spi::Mode::Mode0,
         )
         .map_err(|e| DeviceError::SpiError(e))?;
@@ -204,6 +206,11 @@ impl Device {
         Ok(())
     }
 
+    pub fn channel(&self) -> Result<u8, DeviceError> {
+        let (_, channel) = self.read_register(REG_CH)?;
+        Ok(channel)
+    }
+
     /// Configure the NRF24L01+ features.
     /// The features are:
     /// - Dynamic payload length
@@ -236,20 +243,24 @@ impl Device {
         self.write_register(REG_CONFIG, 0b0000_000)?;
         Ok(())
     }
+
+    /// Received Power Detector.
+    pub fn rpd(&self) -> Result<bool, DeviceError> {
+        let (_, value) = self.read_register(REG_RPD)?;
+        Ok(value == 1)
+    }
 }
 
 #[derive(Debug)]
 pub struct Radio {
     device: Device,
     ce_pin: OutputPin,
-    csn_pin: OutputPin,
     mode: RadioMode,
 }
 
 impl Radio {
-    pub fn new(ce_pin: u8, csn_pin: u8) -> Result<Self, RadioError> {
-        let device: Device =
-            Device::new(ce_pin, csn_pin).map_err(|e| RadioError::DeviceError(e))?;
+    pub fn new(ce_pin: u8) -> Result<Self, RadioError> {
+        let device: Device = Device::new(ce_pin).map_err(|e| RadioError::DeviceError(e))?;
 
         let ce_pin = Gpio::new()
             .map_err(|e| RadioError::GpioError(e))?
@@ -257,16 +268,9 @@ impl Radio {
             .map_err(|e| RadioError::GpioError(e))?
             .into_output();
 
-        let csn_pin = Gpio::new()
-            .map_err(|e| RadioError::GpioError(e))?
-            .get(csn_pin)
-            .map_err(|e| RadioError::GpioError(e))?
-            .into_output();
-
         Ok(Radio {
             device,
             ce_pin,
-            csn_pin,
             mode: RadioMode::Tx,
         })
     }
@@ -286,6 +290,10 @@ impl Radio {
     pub fn set_channel(&self, channel: u8) -> Result<(), DeviceError> {
         self.device.set_channel(channel)?;
         Ok(())
+    }
+
+    pub fn channel(&self) -> Result<u8, DeviceError> {
+        self.device.channel()
     }
 
     pub fn set_address(&self, tx_address: [u8; 5], rx_address: [u8; 5]) -> Result<(), DeviceError> {
@@ -310,5 +318,18 @@ impl Radio {
         self.ce_pin.set_high();
 
         Ok(())
+    }
+
+    pub fn standby(&mut self) {
+        self.ce_pin.set_low();
+    }
+
+    pub fn listen(&mut self) {
+        self.ce_pin.set_high();
+        sleep(Duration::from_micros(130));
+    }
+
+    pub fn received_power_detector(&self) -> Result<bool, DeviceError> {
+        self.device.rpd()
     }
 }
