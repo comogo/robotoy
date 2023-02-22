@@ -13,9 +13,10 @@ fn scan(mut radio: Radio) {
     radio.standby();
     for channel in 0..126 {
         radio.set_channel(channel).unwrap();
-        radio.listen();
-        sleep(Duration::from_micros(130));
+        radio.listen().unwrap();
+        sleep(Duration::from_micros(300));
         let rpd = radio.received_power_detector().unwrap();
+        radio.stop_listening().unwrap();
         println!("Channel {}: {}", channel, if rpd { 1 } else { 0 });
     }
     radio.standby();

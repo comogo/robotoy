@@ -30,6 +30,7 @@ const REG_TX_ADDR: Register = 0x10;
 const REG_DYNPD: Register = 0x1C;
 const REG_FEATURE: Register = 0x1D;
 const REG_RPD: Register = 0x09;
+const REG_STATUS: Register = 0x07;
 
 const BIT_FEATURE_EN_DYN_ACK: u8 = 0b0000_0001;
 const BIT_FEATURE_EN_ACK_PAY: u8 = 0b0000_0010;
@@ -72,13 +73,11 @@ pub enum RadioMode {
 #[derive(Debug)]
 struct Device {
     spi: Spi,
-    ce: gpio::OutputPin,
 }
 
 impl Device {
     pub fn new(ce_pin: u8) -> Result<Self, DeviceError> {
         let gpio: Gpio = Gpio::new().unwrap();
-        let ce: gpio::OutputPin = gpio.get(ce_pin).unwrap().into_output_low();
         let spi: Spi = Spi::new(
             spi::Bus::Spi0,
             spi::SlaveSelect::Ss0,
@@ -87,7 +86,7 @@ impl Device {
         )
         .map_err(|e| DeviceError::SpiError(e))?;
 
-        Ok(Device { spi, ce })
+        Ok(Device { spi })
     }
 
     fn command(&self, data_in: &mut [u8], data_out: &mut [u8]) -> Result<(), DeviceError> {
@@ -221,9 +220,9 @@ impl Device {
         Ok(())
     }
 
-    /// Set the NRF24L01+ in RX mode, PWR_UP = 0, PRIM_RX = 0+.
+    /// Set the NRF24L01+ in TX mode, PWR_UP = 0, PRIM_RX = 0.
     pub fn set_tx_mode(&self) -> Result<(), DeviceError> {
-        self.write_register(REG_CONFIG, 0b0000_000)?;
+        self.write_register(REG_CONFIG, 0b0000_010)?;
         Ok(())
     }
 
@@ -233,14 +232,22 @@ impl Device {
         Ok(())
     }
 
+    pub fn disable_prim_rx(&self) -> Result<(), DeviceError> {
+        let (_, config) = self.read_register(REG_CONFIG)?;
+        self.write_register(REG_CONFIG, config & 0b1111_1110)?;
+        Ok(())
+    }
+
     pub fn power_up(&self) -> Result<(), DeviceError> {
-        self.write_register(REG_CONFIG, 0b0000_001)?;
+        let (_, config) = self.read_register(REG_CONFIG)?;
+        self.write_register(REG_CONFIG, config | 0b0000_010)?;
         sleep(Duration::from_millis(5));
         Ok(())
     }
 
     pub fn power_down(&self) -> Result<(), DeviceError> {
-        self.write_register(REG_CONFIG, 0b0000_000)?;
+        let (_, config) = self.read_register(REG_CONFIG)?;
+        self.write_register(REG_CONFIG, config & 0b111_101)?;
         Ok(())
     }
 
@@ -248,6 +255,11 @@ impl Device {
     pub fn rpd(&self) -> Result<bool, DeviceError> {
         let (_, value) = self.read_register(REG_RPD)?;
         Ok(value == 1)
+    }
+
+    pub fn clear_status(&self) -> Result<(), DeviceError> {
+        self.write_register(REG_STATUS, 0b0111_0000)?;
+        Ok(())
     }
 }
 
@@ -266,7 +278,7 @@ impl Radio {
             .map_err(|e| RadioError::GpioError(e))?
             .get(ce_pin)
             .map_err(|e| RadioError::GpioError(e))?
-            .into_output();
+            .into_output_low();
 
         Ok(Radio {
             device,
@@ -322,11 +334,25 @@ impl Radio {
 
     pub fn standby(&mut self) {
         self.ce_pin.set_low();
+        sleep(Duration::from_micros(130));
     }
 
-    pub fn listen(&mut self) {
+    pub fn listen(&mut self) -> Result<(), DeviceError> {
+        self.device.set_rx_mode()?;
+        self.device.clear_status()?;
         self.ce_pin.set_high();
         sleep(Duration::from_micros(130));
+
+        Ok(())
+    }
+
+    pub fn stop_listening(&mut self) -> Result<(), DeviceError> {
+        self.ce_pin.set_low();
+        sleep(Duration::from_micros(130));
+        self.device.flush_tx()?;
+        self.device.disable_prim_rx()?;
+
+        Ok(())
     }
 
     pub fn received_power_detector(&self) -> Result<bool, DeviceError> {
