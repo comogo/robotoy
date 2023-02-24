@@ -31,6 +31,7 @@ const REG_DYNPD: Register = 0x1C;
 const REG_FEATURE: Register = 0x1D;
 const REG_RPD: Register = 0x09;
 const REG_STATUS: Register = 0x07;
+const REG_RX_PW_P0: Register = 0x11;
 
 const BIT_FEATURE_EN_DYN_ACK: u8 = 0b0000_0001;
 const BIT_FEATURE_EN_ACK_PAY: u8 = 0b0000_0010;
@@ -41,6 +42,7 @@ pub enum DeviceError {
     SpiError(spi::Error),
     GpioError(gpio::Error),
     InvalidChannel,
+    InvalidPayloadSize,
 }
 
 #[derive(Debug)]
@@ -76,8 +78,7 @@ struct Device {
 }
 
 impl Device {
-    pub fn new(ce_pin: u8) -> Result<Self, DeviceError> {
-        let gpio: Gpio = Gpio::new().unwrap();
+    pub fn new() -> Result<Self, DeviceError> {
         let spi: Spi = Spi::new(
             spi::Bus::Spi0,
             spi::SlaveSelect::Ss0,
@@ -86,7 +87,28 @@ impl Device {
         )
         .map_err(|e| DeviceError::SpiError(e))?;
 
-        Ok(Device { spi })
+        sleep(Duration::from_millis(5));
+
+        let device = Device { spi };
+
+        device.set_rf(DataRate::_250Kbps, Power::_0dBm)?;
+        device.set_feature(0)?;
+        device.set_dynamic_payload(false)?;
+        device.set_auto_ack(true)?;
+        device.write_register(REG_EN_RXADDR, 3)?;
+        device.set_payload_size(32)?;
+        device.set_channel(76)?;
+        device.clear_status()?;
+        device.flush_rx()?;
+        device.flush_tx()?;
+        device.write_register(REG_CONFIG, 0b0000_1100)?;
+
+        let (_, cfg) = device.read_register(REG_CONFIG)?;
+        println!("Config: {:08b}", cfg);
+
+        device.power_up()?;
+
+        Ok(device)
     }
 
     fn command(&self, data_in: &mut [u8], data_out: &mut [u8]) -> Result<(), DeviceError> {
@@ -120,6 +142,17 @@ impl Device {
     pub fn flush_rx(&self) -> Result<(), DeviceError> {
         let mut response = [0u8; 1];
         self.command(&mut [CMD_FLUSH_RX], &mut response)?;
+        Ok(())
+    }
+
+    pub fn set_payload_size(&self, size: u8) -> Result<(), DeviceError> {
+        if size > 32 {
+            return Err(DeviceError::InvalidPayloadSize);
+        }
+
+        for i in 0..6 {
+            self.write_register(REG_RX_PW_P0 + i, size)?;
+        }
         Ok(())
     }
 
@@ -165,7 +198,7 @@ impl Device {
             ],
             &mut response,
         )?;
-        self.write_register(CMD_W_REGISTER | REG_EN_RXADDR, 0x01)?;
+        self.write_register(CMD_W_REGISTER | REG_EN_RXADDR, 0x03)?;
         Ok(())
     }
 
@@ -272,19 +305,37 @@ pub struct Radio {
 
 impl Radio {
     pub fn new(ce_pin: u8) -> Result<Self, RadioError> {
-        let device: Device = Device::new(ce_pin).map_err(|e| RadioError::DeviceError(e))?;
-
         let ce_pin = Gpio::new()
             .map_err(|e| RadioError::GpioError(e))?
             .get(ce_pin)
             .map_err(|e| RadioError::GpioError(e))?
             .into_output_low();
 
+        let device: Device = Device::new().map_err(|e| RadioError::DeviceError(e))?;
+
         Ok(Radio {
             device,
             ce_pin,
-            mode: RadioMode::Tx,
+            mode: RadioMode::Rx,
         })
+    }
+
+    pub fn scan(&mut self) -> Result<(), DeviceError> {
+        self.device.set_auto_ack(false)?;
+        self.listen()?;
+        self.stop_listening()?;
+
+        self.device.power_down()?;
+        for i in 0..125 {
+            self.device.set_channel(i)?;
+            self.listen()?;
+            sleep(Duration::from_micros(130));
+            self.stop_listening()?;
+            if self.device.rpd()? {
+                println!("Channel {} is active", i);
+            }
+        }
+        Ok(())
     }
 
     /// Configure the NRF24L01+ to use 250Kbps data rate, 0dBm power,
