@@ -13,7 +13,7 @@ use std::time::Duration;
 type Command = u8;
 type Register = u8;
 
-const SPI_SPEED: u32 = 5_000_000;
+const SPI_SPEED: u32 = 10_000_000;
 
 const CMD_R_REGISTER: Command = 0x00;
 const CMD_W_REGISTER: Command = 0x20;
@@ -111,37 +111,35 @@ impl Device {
         Ok(device)
     }
 
-    fn command(&self, data_in: &mut [u8], data_out: &mut [u8]) -> Result<(), DeviceError> {
-        // self.spi
-        //     .transfer(data_in, data_out)
-        //     .map_err(|e| DeviceError::SpiError(e))
-
+    fn command(&self, data_out: &[u8], data_in: &mut [u8]) -> Result<(), DeviceError> {
         self.spi
-            .transfer_segments(&[Segment::with_write(data_in), Segment::with_read(data_out)])
-            .map_err(|e| DeviceError::SpiError(e))
+            .transfer(data_in, data_out)
+            .map_err(|e| DeviceError::SpiError(e))?;
+
+        Ok(())
     }
 
     fn write_register(&self, register: Register, value: u8) -> Result<(), DeviceError> {
         let mut response = [0u8; 2];
-        self.command(&mut [CMD_W_REGISTER | register, value], &mut response)
+        self.command(&[CMD_W_REGISTER | register, value], &mut response)
     }
 
     fn read_register(&self, register: Register) -> Result<(u8, u8), DeviceError> {
         let mut response = [0u8; 2];
-        self.command(&mut [CMD_R_REGISTER | register, 0], &mut response)?;
+        self.command(&[CMD_R_REGISTER | register, 0], &mut response)?;
 
         Ok((response[0], response[1]))
     }
 
     pub fn flush_tx(&self) -> Result<(), DeviceError> {
         let mut response = [0u8; 1];
-        self.command(&mut [CMD_FLUSH_TX], &mut response)?;
+        self.command(&[CMD_FLUSH_TX], &mut response)?;
         Ok(())
     }
 
     pub fn flush_rx(&self) -> Result<(), DeviceError> {
         let mut response = [0u8; 1];
-        self.command(&mut [CMD_FLUSH_RX], &mut response)?;
+        self.command(&[CMD_FLUSH_RX], &mut response)?;
         Ok(())
     }
 
@@ -150,7 +148,7 @@ impl Device {
             return Err(DeviceError::InvalidPayloadSize);
         }
 
-        for i in 0..6 {
+        for i in 0..5 {
             self.write_register(REG_RX_PW_P0 + i, size)?;
         }
         Ok(())
@@ -177,10 +175,8 @@ impl Device {
 
     /// Function used to enable/disable the dynamic payload length.
     pub fn set_dynamic_payload(&self, enable: bool) -> Result<(), DeviceError> {
-        let mut response = [0u8; 2];
         let value: u8 = if enable { 0b0011_1111 } else { 0b0000_0000 };
-        self.command(&mut [CMD_W_REGISTER | REG_DYNPD, value], &mut response)?;
-        Ok(())
+        self.write_register(REG_DYNPD, value)
     }
 
     /// Enable only the pipe 0 and set its address.
@@ -188,7 +184,7 @@ impl Device {
     pub fn set_rx_address(&self, address: [u8; 5]) -> Result<(), DeviceError> {
         let mut response = [0u8; 6];
         self.command(
-            &mut [
+            &[
                 CMD_W_REGISTER | REG_RX_ADDR_P0,
                 address[4],
                 address[3],
@@ -207,7 +203,7 @@ impl Device {
     pub fn set_tx_address(&self, address: [u8; 5]) -> Result<(), DeviceError> {
         let mut response = [0u8; 6];
         self.command(
-            &mut [
+            &[
                 CMD_W_REGISTER | REG_TX_ADDR,
                 address[4],
                 address[3],
@@ -224,7 +220,7 @@ impl Device {
     pub fn set_auto_ack(&self, enable: bool) -> Result<(), DeviceError> {
         let mut response = [0u8; 2];
         let value: u8 = if enable { 0b0011_1111 } else { 0b0000_0000 };
-        self.command(&mut [CMD_W_REGISTER | REG_EN_AA, value], &mut response)?;
+        self.command(&[CMD_W_REGISTER | REG_EN_AA, value], &mut response)?;
         Ok(())
     }
 

@@ -1,3 +1,4 @@
+#![allow(warnings)]
 extern crate sdl2;
 
 mod controller;
