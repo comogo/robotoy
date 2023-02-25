@@ -7,9 +7,9 @@ use rppal::{
     spi::Segment,
     spi::Spi,
 };
+use std::cmp;
 use std::thread::sleep;
 use std::time::Duration;
-use std::cmp;
 
 type Command = u8;
 type Register = u8;
@@ -79,12 +79,6 @@ pub enum Power {
 }
 
 #[derive(Debug)]
-pub enum RadioMode {
-    Rx,
-    Tx,
-}
-
-#[derive(Debug)]
 struct Device {
     spi: Spi,
 }
@@ -101,23 +95,25 @@ impl Device {
 
         sleep(Duration::from_millis(5));
 
-        let device = Device { spi };
+        Ok(Device { spi })
+    }
 
-        device.set_rf(DataRate::_1Mbps, Power::_0dBm)?;
-        device.set_feature(0)?;
-        device.set_dynamic_payload(false)?;
-        device.set_auto_ack(true)?;
-        device.write_register(REG_EN_RXADDR, 3)?;
-        device.set_payload_size(32)?;
-        device.set_channel(76)?;
-        device.clear_status()?;
-        device.flush_rx()?;
-        device.flush_tx()?;
-        device.write_register(REG_CONFIG, BIT_EN_CRC | BIT_CRCO)?;
-        device.print_status()?;
-        device.power_up()?;
+    pub fn init(&self) -> Result<(), DeviceError> {
+        self.set_rf(DataRate::_1Mbps, Power::_0dBm)?;
+        self.set_feature(0)?;
+        self.set_dynamic_payload(false)?;
+        self.set_auto_ack(true)?;
+        self.write_register(REG_EN_RXADDR, 3)?;
+        self.set_payload_size(32)?;
+        self.set_channel(76)?;
+        self.clear_status()?;
+        self.flush_rx()?;
+        self.flush_tx()?;
+        self.write_register(REG_CONFIG, BIT_EN_CRC | BIT_CRCO)?;
+        self.print_status()?;
+        self.power_up()?;
 
-        Ok(device)
+        Ok(())
     }
 
     fn print_status(&self) -> Result<(), DeviceError> {
@@ -190,7 +186,9 @@ impl Device {
             Power::_0dBm => 0b0000_0110,
         };
 
-        self.write_register(REG_RF, rate | power)?;
+        let (_, cfg) = self.read_register(REG_RF)?;
+        let new_config: u8 = cfg | rate | power;
+        self.write_register(REG_RF, new_config)?;
         Ok(())
     }
 
@@ -317,7 +315,6 @@ impl Device {
 pub struct Radio {
     device: Device,
     ce_pin: OutputPin,
-    mode: RadioMode,
 }
 
 impl Radio {
@@ -329,12 +326,9 @@ impl Radio {
             .into_output_low();
 
         let device: Device = Device::new().map_err(|e| RadioError::DeviceError(e))?;
+        device.init().map_err(|e| RadioError::DeviceError(e))?;
 
-        Ok(Radio {
-            device,
-            ce_pin,
-            mode: RadioMode::Rx,
-        })
+        Ok(Radio { device, ce_pin })
     }
 
     pub fn scan(&mut self) -> Result<(), DeviceError> {
@@ -355,7 +349,7 @@ impl Radio {
                     sleep(Duration::from_micros(130));
                     self.stop_listening()?;
 
-                    if self.device.rpd()? { 
+                    if self.device.rpd()? {
                         data[i as usize] += 1;
                     }
                 }
@@ -376,8 +370,7 @@ impl Radio {
     /// Configure the NRF24L01+ to use 250Kbps data rate, 0dBm power,
     /// dynamic payload, disable auto ack and TX mode.
     pub fn setup(&self) -> Result<(), DeviceError> {
-        self.device
-            .set_feature(BIT_EN_DPL | BIT_EN_DYN_ACK)?;
+        self.device.set_feature(BIT_EN_DPL | BIT_EN_DYN_ACK)?;
         self.device.set_rf(DataRate::_250Kbps, Power::_0dBm)?;
         self.device.set_dynamic_payload(true)?;
         self.device.set_auto_ack(false)?;
@@ -405,13 +398,11 @@ impl Radio {
         sleep(Duration::from_micros(130));
         self.device.flush_tx()?;
         self.device.set_tx_mode()?;
-        self.mode = RadioMode::Tx;
         Ok(())
     }
 
     pub fn set_rx_mode(&mut self) -> Result<(), DeviceError> {
         self.device.power_up()?;
-        self.mode = RadioMode::Rx;
         self.device.set_rx_mode()?;
         self.ce_pin.set_high();
 

@@ -44,6 +44,35 @@ impl ControllerState {
         }
     }
 
+    pub fn to_bytes(&self) -> [u8; 13] {
+        let mut bytes: [u8; 13] = [0; 13];
+
+        let buttons: u8 = (self.x as u8)
+            | ((self.circle as u8) << 1)
+            | ((self.square as u8) << 2)
+            | ((self.triangle as u8) << 3)
+            | ((self.select as u8) << 4)
+            | ((self.start as u8) << 5)
+            | ((self.l1 as u8) << 6)
+            | ((self.r1 as u8) << 7);
+
+        bytes[0] = buttons;
+        bytes[1] = (self.l2 >> 8) as u8;
+        bytes[2] = self.l2 as u8;
+        bytes[3] = (self.r2 >> 8) as u8;
+        bytes[4] = self.r2 as u8;
+        bytes[5] = (self.yaw >> 8) as u8;
+        bytes[6] = self.yaw as u8;
+        bytes[7] = (self.throttle >> 8) as u8;
+        bytes[8] = self.throttle as u8;
+        bytes[9] = (self.pitch >> 8) as u8;
+        bytes[10] = self.pitch as u8;
+        bytes[11] = (self.roll >> 8) as u8;
+        bytes[12] = self.roll as u8;
+
+        bytes
+    }
+
     pub fn update_button(&mut self, button: Button, value: bool) {
         match button {
             Button::A => self.x = value,
