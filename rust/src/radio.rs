@@ -9,9 +9,11 @@ use rppal::{
 };
 use std::thread::sleep;
 use std::time::Duration;
+use std::cmp;
 
 type Command = u8;
 type Register = u8;
+type ConfigBit = u8;
 
 const SPI_SPEED: u32 = 10_000_000;
 
@@ -33,9 +35,19 @@ const REG_RPD: Register = 0x09;
 const REG_STATUS: Register = 0x07;
 const REG_RX_PW_P0: Register = 0x11;
 
-const BIT_FEATURE_EN_DYN_ACK: u8 = 0b0000_0001;
-const BIT_FEATURE_EN_ACK_PAY: u8 = 0b0000_0010;
-const BIT_FEATURE_EN_DPL: u8 = 0b0000_0100;
+// CONFIG bits
+const BIT_PRIM_RX: ConfigBit = 1;
+const BIT_PWR_UP: ConfigBit = 2;
+const BIT_CRCO: ConfigBit = 4;
+const BIT_EN_CRC: ConfigBit = 8;
+
+// RF_SETUP bits
+const BIT_RF_PWR: ConfigBit = 6;
+
+// FEATURE bits
+const BIT_EN_DYN_ACK: ConfigBit = 1;
+const BIT_EN_ACK_PAY: ConfigBit = 2;
+const BIT_EN_DPL: ConfigBit = 4;
 
 #[derive(Debug)]
 pub enum DeviceError {
@@ -91,7 +103,7 @@ impl Device {
 
         let device = Device { spi };
 
-        device.set_rf(DataRate::_250Kbps, Power::_0dBm)?;
+        device.set_rf(DataRate::_1Mbps, Power::_0dBm)?;
         device.set_feature(0)?;
         device.set_dynamic_payload(false)?;
         device.set_auto_ack(true)?;
@@ -101,14 +113,23 @@ impl Device {
         device.clear_status()?;
         device.flush_rx()?;
         device.flush_tx()?;
-        device.write_register(REG_CONFIG, 0b0000_1100)?;
-
-        let (_, cfg) = device.read_register(REG_CONFIG)?;
-        println!("Config: {:08b}", cfg);
-
+        device.write_register(REG_CONFIG, BIT_EN_CRC | BIT_CRCO)?;
+        device.print_status()?;
         device.power_up()?;
 
         Ok(device)
+    }
+
+    fn print_status(&self) -> Result<(), DeviceError> {
+        let (_, cfg) = self.read_register(REG_CONFIG)?;
+        println!("MASK_RX_DR: {}", (cfg & 0x40) >> 6);
+        println!("MASK_TX_DS: {}", (cfg & 0x20) >> 5);
+        println!("MASK_MAX_RT: {}", (cfg & 0x10) >> 4);
+        println!("EN_CRC: {}", (cfg & 0x08) >> 3);
+        println!("CRCO: {}", (cfg & 0x04) >> 2);
+        println!("PWR_UP: {}", (cfg & 0x02) >> 1);
+        println!("PRIM_RX: {}", cfg & 0x01);
+        Ok(())
     }
 
     fn command(&self, data_out: &[u8], data_in: &mut [u8]) -> Result<(), DeviceError> {
@@ -263,7 +284,7 @@ impl Device {
 
     pub fn disable_prim_rx(&self) -> Result<(), DeviceError> {
         let (_, config) = self.read_register(REG_CONFIG)?;
-        self.write_register(REG_CONFIG, config & 0b1111_1110)?;
+        self.write_register(REG_CONFIG, config & !BIT_PRIM_RX)?;
         Ok(())
     }
 
@@ -318,18 +339,36 @@ impl Radio {
 
     pub fn scan(&mut self) -> Result<(), DeviceError> {
         self.device.set_auto_ack(false)?;
-        self.listen()?;
+        self.start_listening()?;
         self.stop_listening()?;
-
         self.device.power_down()?;
-        for i in 0..125 {
-            self.device.set_channel(i)?;
-            self.listen()?;
-            sleep(Duration::from_micros(130));
-            self.stop_listening()?;
-            if self.device.rpd()? {
-                println!("Channel {} is active", i);
+
+        let mut data: [u8; 127] = [0; 127];
+
+        'scanner: loop {
+            data = [0; 127];
+
+            for run in 1..100 {
+                for i in 0..126 {
+                    self.device.set_channel(i)?;
+                    self.start_listening()?;
+                    sleep(Duration::from_micros(130));
+                    self.stop_listening()?;
+
+                    if self.device.rpd()? { 
+                        data[i as usize] += 1;
+                    }
+                }
             }
+
+            for rssi in data.iter() {
+                if rssi > &0 {
+                    print!("{:01x}", cmp::min(0xf, (rssi & 0xf)));
+                } else {
+                    print!("-");
+                }
+            }
+            println!("");
         }
         Ok(())
     }
@@ -338,7 +377,7 @@ impl Radio {
     /// dynamic payload, disable auto ack and TX mode.
     pub fn setup(&self) -> Result<(), DeviceError> {
         self.device
-            .set_feature(BIT_FEATURE_EN_DPL | BIT_FEATURE_EN_DYN_ACK)?;
+            .set_feature(BIT_EN_DPL | BIT_EN_DYN_ACK)?;
         self.device.set_rf(DataRate::_250Kbps, Power::_0dBm)?;
         self.device.set_dynamic_payload(true)?;
         self.device.set_auto_ack(false)?;
@@ -384,7 +423,7 @@ impl Radio {
         sleep(Duration::from_micros(130));
     }
 
-    pub fn listen(&mut self) -> Result<(), DeviceError> {
+    pub fn start_listening(&mut self) -> Result<(), DeviceError> {
         self.device.set_rx_mode()?;
         self.device.clear_status()?;
         self.ce_pin.set_high();
