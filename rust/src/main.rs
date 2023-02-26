@@ -31,12 +31,10 @@ pub fn main() {
             break 'running;
         }
 
-        let elapsed = initial_time.elapsed().as_millis();
+        let state = controller.get_state();
+        radio.send(&state.to_bytes()).unwrap();
 
-        if elapsed > 1000 {
-            println!("{:?}", controller.get_state());
-            initial_time = Instant::now();
-        }
+        sleep(Duration::from_micros(15));
     }
 
     println!("Shutdown!");

@@ -21,6 +21,8 @@ const CMD_R_REGISTER: Command = 0x00;
 const CMD_W_REGISTER: Command = 0x20;
 const CMD_FLUSH_TX: Command = 0xE1;
 const CMD_FLUSH_RX: Command = 0xE2;
+const CMD_W_TX_PAYLOAD: Command = 0xA0;
+const CMD_W_TX_PAYLOAD_NO_ACK: Command = 0xB0;
 
 const REG_CONFIG: Register = 0x00;
 const REG_EN_AA: Register = 0x01;
@@ -76,6 +78,27 @@ pub enum Power {
     _12dBm,
     _6dBm,
     _0dBm,
+}
+
+#[derive(Debug)]
+struct Status {
+    rx_dr: bool,
+    tx_ds: bool,
+    max_rt: bool,
+    rx_p_no: u8,
+    tx_full: bool,
+}
+
+impl Status {
+    fn new(status: u8) -> Self {
+        Status {
+            rx_dr: (status & 0x40) != 0,
+            tx_ds: (status & 0x20) != 0,
+            max_rt: (status & 0x10) != 0,
+            rx_p_no: (status & 0x0E) >> 1,
+            tx_full: (status & 0x01) != 0,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -309,6 +332,28 @@ impl Device {
         self.write_register(REG_STATUS, 0b0111_0000)?;
         Ok(())
     }
+
+    pub fn status(&self) -> Result<Status, DeviceError> {
+        let (_, status) = self.read_register(REG_STATUS)?;
+        Ok(Status::new(status))
+    }
+
+    pub fn write_payload(&self, payload: &[u8], ack: bool) -> Result<Status, DeviceError> {
+        if payload.len() > 32 {
+            return Err(DeviceError::InvalidPayloadSize);
+        }
+
+        let mut response = [0u8; 33];
+        let mut command = [0u8; 33];
+        command[0] = if ack {
+            CMD_W_TX_PAYLOAD
+        } else {
+            CMD_W_TX_PAYLOAD_NO_ACK
+        };
+        command[1..payload.len() + 1].copy_from_slice(payload);
+        self.command(&command, &mut response)?;
+        Ok(Status::new(response[0]))
+    }
 }
 
 #[derive(Debug)]
@@ -434,5 +479,21 @@ impl Radio {
 
     pub fn received_power_detector(&self) -> Result<bool, DeviceError> {
         self.device.rpd()
+    }
+
+    pub fn send(&mut self, data: &[u8]) -> Result<(), DeviceError> {
+        // Wait for the FIFO to be empty
+        'fifo_full: loop {
+            let status = self.device.status()?;
+            if !status.tx_full {
+                break 'fifo_full;
+            }
+            sleep(Duration::from_micros(15));
+        }
+        let _status = self.device.write_payload(data, false)?;
+        self.ce_pin.set_high();
+        sleep(Duration::from_micros(15));
+        self.ce_pin.set_low();
+        Ok(())
     }
 }
