@@ -27,8 +27,8 @@ const CMD_W_TX_PAYLOAD_NO_ACK: Command = 0xB0;
 const REG_CONFIG: Register = 0x00;
 const REG_EN_AA: Register = 0x01;
 const REG_EN_RXADDR: Register = 0x02;
-const REG_CH: Register = 0x05;
-const REG_RF: Register = 0x06;
+const REG_RF_CH: Register = 0x05;
+const REG_RF_SETUP: Register = 0x06;
 const REG_RX_ADDR_P0: Register = 0x0A;
 const REG_TX_ADDR: Register = 0x10;
 const REG_DYNPD: Register = 0x1C;
@@ -57,6 +57,7 @@ pub enum DeviceError {
     GpioError(gpio::Error),
     InvalidChannel,
     InvalidPayloadSize,
+    InvalidPipe,
 }
 
 #[derive(Debug)]
@@ -122,32 +123,83 @@ impl Device {
     }
 
     pub fn init(&self) -> Result<(), DeviceError> {
-        self.set_rf(DataRate::_1Mbps, Power::_0dBm)?;
+        self.set_rf(DataRate::_250Kbps, Power::_0dBm)?;
         self.set_feature(0)?;
         self.set_dynamic_payload(false)?;
         self.set_auto_ack(true)?;
-        self.write_register(REG_EN_RXADDR, 3)?;
-        self.set_payload_size(32)?;
+        self.write_register(REG_EN_RXADDR, 1)?;
+        self.set_payload_size(1)?;
         self.set_channel(76)?;
         self.clear_status()?;
         self.flush_rx()?;
         self.flush_tx()?;
         self.write_register(REG_CONFIG, BIT_EN_CRC | BIT_CRCO)?;
-        self.print_status()?;
         self.power_up()?;
 
         Ok(())
     }
 
+    pub fn print_registers(&self) -> Result<(), DeviceError> {
+        let mut cfg: u8 = 0;
+
+        self.print_status();
+
+        let mut address = self.rx_address(0)?;
+        print!("RX_ADDR_P0-1    = 0x");
+        for i in address {
+            print!("{:02x}", i);
+        }
+
+        address = self.rx_address(1)?;
+        print!(" 0x");
+        for i in address {
+            print!("{:02x}", i);
+        }
+
+        print!("\nRX_ADDR_P2-5   = ");
+        print!(" 0x{:02x}", self.rx_address(2)?[4]);
+        print!(" 0x{:02x}", self.rx_address(3)?[4]);
+        print!(" 0x{:02x}", self.rx_address(4)?[4]);
+        print!(" 0x{:02x}", self.rx_address(5)?[4]);
+
+        println!("");
+        address = self.tx_address()?;
+        print!("TX_ADDR         = 0x");
+        for i in address {
+            print!("{:02x}", i);
+        }
+        println!("");
+
+        (_, cfg) = self.read_register(REG_EN_AA)?;
+        println!("EN_AA           = {:#04x}", cfg);
+
+        (_, cfg) = self.read_register(REG_EN_RXADDR)?;
+        println!("EN_RXADDR       = {:#04x}", cfg);
+
+        (_, cfg) = self.read_register(REG_RF_CH)?;
+        println!("RF_CH           = {:#04x}", cfg);
+
+        (_, cfg) = self.read_register(REG_RF_SETUP)?;
+        println!("RF_SETUP        = {:#04x}", cfg);
+
+        (_, cfg) = self.read_register(REG_CONFIG)?;
+        println!("CONFIG          = {:#04x}", cfg);
+
+        (_, cfg) = self.read_register(REG_DYNPD)?;
+        let (_, feature) = self.read_register(REG_FEATURE)?;
+        println!("DYNPD/FEATURE   = {:#04x} {:#04x}", cfg, feature);
+
+        Ok(())
+    }
+
     fn print_status(&self) -> Result<(), DeviceError> {
-        let (_, cfg) = self.read_register(REG_CONFIG)?;
-        println!("MASK_RX_DR: {}", (cfg & 0x40) >> 6);
-        println!("MASK_TX_DS: {}", (cfg & 0x20) >> 5);
-        println!("MASK_MAX_RT: {}", (cfg & 0x10) >> 4);
-        println!("EN_CRC: {}", (cfg & 0x08) >> 3);
-        println!("CRCO: {}", (cfg & 0x04) >> 2);
-        println!("PWR_UP: {}", (cfg & 0x02) >> 1);
-        println!("PRIM_RX: {}", cfg & 0x01);
+        let (_, cfg) = self.read_register(REG_STATUS)?;
+        print!("STATUS\t\t= {:#04x}", cfg);
+        print!(" RX_DR={}", (cfg & 0x40) >> 6);
+        print!(" TX_DS={}", (cfg & 0x20) >> 5);
+        print!(" MAX_RT={}", (cfg & 0x10) >> 4);
+        print!(" RX_P_NO={}", (cfg & 0x0E) >> 1);
+        println!(" TX_FULL={}", cfg & 0x01);
         Ok(())
     }
 
@@ -209,9 +261,9 @@ impl Device {
             Power::_0dBm => 0b0000_0110,
         };
 
-        let (_, cfg) = self.read_register(REG_RF)?;
-        let new_config: u8 = cfg | rate | power;
-        self.write_register(REG_RF, new_config)?;
+        let (_, cfg) = self.read_register(REG_RF_SETUP)?;
+        let new_config: u8 = (cfg & 0xC0) | rate | power;
+        self.write_register(REG_RF_SETUP, new_config)?;
         Ok(())
     }
 
@@ -240,6 +292,40 @@ impl Device {
         Ok(())
     }
 
+    pub fn rx_address(&self, pipe: u8) -> Result<[u8; 5], DeviceError> {
+        if pipe > 5 {
+            return Err(DeviceError::InvalidPipe);
+        }
+
+        let pipe_address: u8 = REG_RX_ADDR_P0 + pipe;
+
+        if pipe < 2 {
+            let mut response = [0u8; 6];
+            self.command(
+                &[CMD_R_REGISTER | (pipe_address), 0u8, 0u8, 0u8, 0u8, 0u8],
+                &mut response,
+            )?;
+            Ok([
+                response[5],
+                response[4],
+                response[3],
+                response[2],
+                response[1],
+            ])
+        } else {
+            let mut response = [0u8; 3];
+            let mut p1_address = self.rx_address(1)?;
+            self.command(&[CMD_R_REGISTER | pipe_address, 0u8, 0u8], &mut response)?;
+            Ok([
+                p1_address[4],
+                p1_address[3],
+                p1_address[2],
+                response[2],
+                response[1],
+            ])
+        }
+    }
+
     /// Set the address used for the transmission.
     /// The address is 5 bytes long.
     pub fn set_tx_address(&self, address: [u8; 5]) -> Result<(), DeviceError> {
@@ -258,6 +344,21 @@ impl Device {
         Ok(())
     }
 
+    pub fn tx_address(&self) -> Result<[u8; 5], DeviceError> {
+        let mut response = [0u8; 6];
+        self.command(
+            &[CMD_R_REGISTER | REG_TX_ADDR, 0u8, 0u8, 0u8, 0u8, 0u8],
+            &mut response,
+        )?;
+        Ok([
+            response[5],
+            response[4],
+            response[3],
+            response[2],
+            response[1],
+        ])
+    }
+
     /// Enable or disable the auto acknowledgment for all pipes.
     pub fn set_auto_ack(&self, enable: bool) -> Result<(), DeviceError> {
         let mut response = [0u8; 2];
@@ -272,12 +373,12 @@ impl Device {
             return Err(DeviceError::InvalidChannel);
         }
 
-        self.write_register(REG_CH, channel)?;
+        self.write_register(REG_RF_CH, channel)?;
         Ok(())
     }
 
     pub fn channel(&self) -> Result<u8, DeviceError> {
-        let (_, channel) = self.read_register(REG_CH)?;
+        let (_, channel) = self.read_register(REG_RF_CH)?;
         Ok(channel)
     }
 
@@ -291,21 +392,15 @@ impl Device {
         Ok(())
     }
 
-    /// Set the NRF24L01+ in TX mode, PWR_UP = 0, PRIM_RX = 0.
-    pub fn set_tx_mode(&self) -> Result<(), DeviceError> {
-        self.write_register(REG_CONFIG, 0b0000_010)?;
-        Ok(())
-    }
-
-    /// Set the NRF24L01+ in RX mode, PWR_UP = 1, PRIM_RX = 1.
-    pub fn set_rx_mode(&self) -> Result<(), DeviceError> {
-        self.write_register(REG_CONFIG, 0b0000_011)?;
-        Ok(())
-    }
-
-    pub fn disable_prim_rx(&self) -> Result<(), DeviceError> {
+    pub fn set_prim_rx(&self, value: bool) -> Result<(), DeviceError> {
         let (_, config) = self.read_register(REG_CONFIG)?;
-        self.write_register(REG_CONFIG, config & !BIT_PRIM_RX)?;
+
+        if value {
+            self.write_register(REG_CONFIG, config | BIT_PRIM_RX)?;
+        } else {
+            self.write_register(REG_CONFIG, config & !BIT_PRIM_RX)?;
+        }
+
         Ok(())
     }
 
@@ -343,14 +438,15 @@ impl Device {
             return Err(DeviceError::InvalidPayloadSize);
         }
 
-        let mut response = [0u8; 33];
-        let mut command = [0u8; 33];
+        let mut response = [0u8; 2];
+        let mut command = [0u8; 2];
         command[0] = if ack {
             CMD_W_TX_PAYLOAD
         } else {
             CMD_W_TX_PAYLOAD_NO_ACK
         };
         command[1..payload.len() + 1].copy_from_slice(payload);
+        println!("command: {:?}", command);
         self.command(&command, &mut response)?;
         Ok(Status::new(response[0]))
     }
@@ -374,6 +470,11 @@ impl Radio {
         device.init().map_err(|e| RadioError::DeviceError(e))?;
 
         Ok(Radio { device, ce_pin })
+    }
+
+    pub fn print_details(&self) -> Result<(), DeviceError> {
+        self.device.print_registers();
+        Ok(())
     }
 
     pub fn scan(&mut self) -> Result<(), DeviceError> {
@@ -415,11 +516,11 @@ impl Radio {
     /// Configure the NRF24L01+ to use 250Kbps data rate, 0dBm power,
     /// dynamic payload, disable auto ack and TX mode.
     pub fn setup(&self) -> Result<(), DeviceError> {
-        self.device.set_feature(BIT_EN_DPL | BIT_EN_DYN_ACK)?;
+        // self.device.set_feature(BIT_EN_DPL | BIT_EN_DYN_ACK)?;
         self.device.set_rf(DataRate::_250Kbps, Power::_0dBm)?;
-        self.device.set_dynamic_payload(true)?;
-        self.device.set_auto_ack(false)?;
-        self.device.set_tx_mode()?;
+        // self.device.set_dynamic_payload(true)?;
+        // self.device.set_auto_ack(false)?;
+        self.device.set_prim_rx(false)?;
         Ok(())
     }
 
@@ -442,13 +543,13 @@ impl Radio {
         self.ce_pin.set_low();
         sleep(Duration::from_micros(130));
         self.device.flush_tx()?;
-        self.device.set_tx_mode()?;
+        self.device.set_prim_rx(false)?;
         Ok(())
     }
 
     pub fn set_rx_mode(&mut self) -> Result<(), DeviceError> {
         self.device.power_up()?;
-        self.device.set_rx_mode()?;
+        self.device.set_prim_rx(true)?;
         self.ce_pin.set_high();
 
         Ok(())
@@ -460,7 +561,7 @@ impl Radio {
     }
 
     pub fn start_listening(&mut self) -> Result<(), DeviceError> {
-        self.device.set_rx_mode()?;
+        self.device.set_prim_rx(true)?;
         self.device.clear_status()?;
         self.ce_pin.set_high();
         sleep(Duration::from_micros(130));
@@ -472,7 +573,7 @@ impl Radio {
         self.ce_pin.set_low();
         sleep(Duration::from_micros(130));
         self.device.flush_tx()?;
-        self.device.disable_prim_rx()?;
+        self.device.set_prim_rx(false)?;
 
         Ok(())
     }
@@ -490,10 +591,12 @@ impl Radio {
             }
             sleep(Duration::from_micros(15));
         }
-        let _status = self.device.write_payload(data, false)?;
+        let status = self.device.write_payload(data, false)?;
         self.ce_pin.set_high();
         sleep(Duration::from_micros(15));
         self.ce_pin.set_low();
+
+        println!("Enviado: %{:?} ({:?})", data, status);
         Ok(())
     }
 }
