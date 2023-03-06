@@ -306,6 +306,68 @@ impl RF24 {
     fn set_ce_low(&mut self) {
         self.ce_pin.set_low();
     }
+
+    fn print_details(&self) -> Result<(), RF24Error> {
+        let mut register = self.read_register(Register::STATUS)?;
+        print!("STATUS\t\t= {:#04x}", register);
+        print!(" RX_DR={}", (register & RX_DR) >> 6);
+        print!(" TX_DS={}", (register & TX_DS) >> 5);
+        print!(" MAX_RT={}", (register & MAX_RT) >> 4);
+        print!(" RX_P_NO={}", (register & RX_P_NO) >> 1);
+        println!(" TX_FULL={}", register & TX_FULL);
+
+        let mut full_address = [0u8; 5];
+        self.read_address(Register::RX_ADDR_P0, 5, &mut full_address)?;
+        print!("RX_ADDR_P0-1    = 0x");
+        for i in full_address {
+            print!("{:02x}", i);
+        }
+
+        self.read_address(Register::RX_ADDR_P1, 5, &mut full_address)?;
+        print!(" 0x");
+        for i in full_address {
+            print!("{:02x}", i);
+        }
+
+        let mut short_address: u8 = 0;
+        print!("\nRX_ADDR_P2-5   = ");
+        short_address = self.read_register(Register::RX_ADDR_P2)?;
+        print!(" 0x{:02x}", short_address);
+        short_address = self.read_register(Register::RX_ADDR_P3)?;
+        print!(" 0x{:02x}", short_address);
+        short_address = self.read_register(Register::RX_ADDR_P4)?;
+        print!(" 0x{:02x}", short_address);
+        short_address = self.read_register(Register::RX_ADDR_P5)?;
+        println!(" 0x{:02x}", short_address);
+
+        self.read_address(Register::TX_ADDR, 5, &mut full_address)?;
+        print!("TX_ADDR         = 0x");
+        for i in full_address {
+            print!("{:02x}", i);
+        }
+        println!("");
+
+        register = self.read_register(Register::EN_AA)?;
+        println!("EN_AA           = {:#04x}", register);
+
+        register = self.read_register(Register::EN_RXADDR)?;
+        println!("EN_RXADDR       = {:#04x}", register);
+
+        register = self.read_register(Register::RF_CH)?;
+        println!("RF_CH           = {:#04x}", register);
+
+        register = self.read_register(Register::RF_SETUP)?;
+        println!("RF_SETUP        = {:#04x}", register);
+
+        register = self.read_register(Register::CONFIG)?;
+        println!("CONFIG          = {:#04x}", register);
+
+        register = self.read_register(Register::DYNPD)?;
+        let feature = self.read_register(Register::FEATURE)?;
+        println!("DYNPD/FEATURE   = {:#04x} {:#04x}", register, feature);
+
+        Ok(())
+    }
 }
 
 pub struct Radio {
@@ -430,5 +492,9 @@ impl Radio {
         self.rf24.write_register(Register::STATUS, status)?;
 
         Ok(())
+    }
+
+    pub fn print_rf_details(&self) {
+        self.rf24.print_details().unwrap();
     }
 }

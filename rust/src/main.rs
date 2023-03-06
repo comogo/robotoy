@@ -16,7 +16,7 @@ fn test_radio() {
     println!("Initialized!");
 
     radio.configure().unwrap();
-    // radio.print_details().unwrap();
+    radio.print_rf_details();
 
     'running: loop {
         let should_continue = controller.update_state();
