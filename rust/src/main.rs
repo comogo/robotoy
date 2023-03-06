@@ -3,6 +3,7 @@ extern crate sdl2;
 
 mod controller;
 mod radio;
+mod registers;
 mod rf24;
 
 use controller::Controller;
