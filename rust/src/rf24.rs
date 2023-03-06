@@ -192,6 +192,7 @@ impl fmt::Display for Register {
 
 #[derive(Debug)]
 pub enum RF24Error {
+    GpioError(gpio::Error),
     SpiError(spi::Error),
     InvalidChannel,
     InvalidPayloadSize,
@@ -202,10 +203,17 @@ pub enum RF24Error {
 #[derive(Debug)]
 pub struct RF24 {
     spi: Spi,
+    ce_pin: OutputPin,
 }
 
 impl RF24 {
-    pub fn new() -> Result<RF24, RF24Error> {
+    pub fn new(ce_pin_number: u8) -> Result<RF24, RF24Error> {
+        let ce_pin = Gpio::new()
+            .map_err(|e| RF24Error::GpioError(e))?
+            .get(ce_pin_number)
+            .map_err(|e| RF24Error::GpioError(e))?
+            .into_output_low();
+
         let spi: Spi = Spi::new(
             spi::Bus::Spi0,
             spi::SlaveSelect::Ss0,
@@ -216,7 +224,7 @@ impl RF24 {
 
         sleep(Duration::from_millis(5));
 
-        Ok(RF24 { spi })
+        Ok(RF24 { spi, ce_pin })
     }
 
     /// Send a command to the NRF24L01+ module and reads the response.
@@ -232,7 +240,14 @@ impl RF24 {
     ///
     /// The `size` parameter is the number of bytes to read.
     /// The `data` parameter is the buffer where the read data will be stored.
-    fn read_register(&self, reg: Register, size: usize, data: &mut [u8]) -> Result<(), RF24Error> {
+    fn read_register(&self, reg: Register) -> Result<u8, RF24Error> {
+        let mut data_in = [0u8; 2];
+        let reg: u8 = Command::R_REGISTER as u8 | reg as u8;
+        self.command(&[reg, 0], &mut data_in)?;
+        Ok((data_in[1]))
+    }
+
+    fn read_address(&self, reg: Register, size: usize, data: &mut [u8]) -> Result<(), RF24Error> {
         let mut data_out: Vec<u8> = vec![0; size + 1];
         let mut data_in: Vec<u8> = vec![0; size + 1];
         data_out[0] = Command::R_REGISTER as u8 | reg as u8;
@@ -261,14 +276,23 @@ impl RF24 {
         self.command(&data_out, &mut data_in)?;
         Ok(())
     }
+
+    fn set_ce(&mut self, value: bool) {
+        if value {
+            self.ce_high();
+        } else {
+            self.ce_low();
+        }
+    }
 }
 
-struct Radio {
+pub struct Radio {
     rf24: RF24,
     address: [u8; 5],
     rate: DataRate,
     power_level: PowerLevel,
     channel: u8,
+    ce_pin_number: u8,
 }
 
 impl Radio {
@@ -277,8 +301,9 @@ impl Radio {
         rate: DataRate,
         power_level: PowerLevel,
         channel: u8,
+        ce_pin_number: u8,
     ) -> Result<Radio, RF24Error> {
-        let rf24 = RF24::new()?;
+        let rf24 = RF24::new(ce_pin_number)?;
 
         let mut radio = Radio {
             rf24,
@@ -286,6 +311,7 @@ impl Radio {
             power_level,
             address: [0; 5],
             channel: 0,
+            ce_pin_number,
         };
 
         radio.set_address(address)?;
@@ -318,7 +344,8 @@ impl Radio {
 
     pub fn configure(&self) -> Result<(), RF24Error> {
         // Disable interrupts, enable CRC, 2 bytes CRC, and set as primary receiver
-        self.rf24.write_register(Register::CONFIG, 0x7D)?;
+        let config: u8 = MASK_MAX_RT | MASK_TX_DS | MASK_RX_DR | EN_CRC | CRCO;
+        self.rf24.write_register(Register::CONFIG, config)?;
 
         // Set channel
         self.rf24.write_register(Register::RF_CH, self.channel)?;
@@ -329,6 +356,59 @@ impl Radio {
 
         // Disable auto-ack
         self.rf24.write_register(Register::FEATURE, EN_DYN_ACK)?;
+
+        // Set payload size
+        let payload_size: u8 = 13;
+        self.rf24.write_register(Register::RX_PW_P0, payload_size)?;
+        self.rf24.write_register(Register::RX_PW_P1, payload_size)?;
+        self.rf24.write_register(Register::RX_PW_P2, payload_size)?;
+        self.rf24.write_register(Register::RX_PW_P3, payload_size)?;
+        self.rf24.write_register(Register::RX_PW_P4, payload_size)?;
+        self.rf24.write_register(Register::RX_PW_P5, payload_size)?;
+
+        // Flush RX and TX
+        self.rf24.write_register(Register::FLUSH_RX, 0)?;
+        self.rf24.write_register(Register::FLUSH_TX, 0)?;
+
+        // Clear Status
+        let status: u8 = RX_DR | TX_DS | MAX_RT;
+        self.rf24.write_register(Register::STATUS, status)?;
+
+        // Power up
+        self.rf24
+            .write_register(Register::CONFIG, config | PWR_UP)?;
+
+        sleep(Duration::from_millis(130));
+
+        Ok(())
+    }
+
+    // Send a payload with no ack
+    pub fn send(&self, payload: &[u8]) -> Result<(), RF24Error> {
+        // Wait for TX FIFO to be empty
+        'fifo_full: loop {
+            let status = self.rf24.read_register(Register::STATUS)?;
+            if status & TX_FULL == 0 {
+                break 'fifo_full;
+            }
+            sleep(Duration::from_micros(100));
+        }
+
+        // Write payload
+        let mut data_out: Vec<u8> = vec![0; payload.len() + 1];
+        let mut data_in: Vec<u8> = vec![0; payload.len() + 1];
+        data_out[0] = Command::W_TX_PAYLOAD_NOACK as u8;
+        data_out[1..].copy_from_slice(payload);
+        self.rf24.command(&data_out, &mut data_in)?;
+
+        self.rf24.set_ce(true);
+        sleep(Duration::from_micros(15));
+        self.rf24.set_ce(false);
+
+        // Clear Status
+        let status: u8 = RX_DR | TX_DS | MAX_RT;
+        self.rf24.write_register(Register::STATUS, status)?;
+
         Ok(())
     }
 }
