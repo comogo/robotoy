@@ -1,11 +1,9 @@
 extern crate rppal;
 
-use rppal::{spi, spi::Spi};
+use rppal::{gpio, spi, spi::Spi};
 use std::fmt;
 use std::thread::sleep;
 use std::time::Duration;
-
-use crate::registers;
 
 const SPI_SPEED: u32 = 10_000_000;
 
@@ -195,20 +193,18 @@ pub enum RF24Error {
     GpioError(gpio::Error),
     SpiError(spi::Error),
     InvalidChannel,
-    InvalidPayloadSize,
-    InvalidPipe,
     InvalidAddressWidth,
 }
 
 #[derive(Debug)]
 pub struct RF24 {
     spi: Spi,
-    ce_pin: OutputPin,
+    ce_pin: gpio::OutputPin,
 }
 
 impl RF24 {
     pub fn new(ce_pin_number: u8) -> Result<RF24, RF24Error> {
-        let ce_pin = Gpio::new()
+        let ce_pin = gpio::Gpio::new()
             .map_err(|e| RF24Error::GpioError(e))?
             .get(ce_pin_number)
             .map_err(|e| RF24Error::GpioError(e))?
@@ -244,7 +240,7 @@ impl RF24 {
         let mut data_in = [0u8; 2];
         let reg: u8 = Command::R_REGISTER as u8 | reg as u8;
         self.command(&[reg, 0], &mut data_in)?;
-        Ok((data_in[1]))
+        Ok(data_in[1])
     }
 
     fn read_address(&self, reg: Register, size: usize, data: &mut [u8]) -> Result<(), RF24Error> {
@@ -277,12 +273,38 @@ impl RF24 {
         Ok(())
     }
 
-    fn set_ce(&mut self, value: bool) {
-        if value {
-            self.ce_high();
-        } else {
-            self.ce_low();
-        }
+    /// Flushes the TX FIFO.
+    fn flush_tx(&self) -> Result<(), RF24Error> {
+        let mut data_in = [0u8; 2];
+        self.command(&[Command::FLUSH_TX as u8, 0], &mut data_in)?;
+        Ok(())
+    }
+
+    /// Flushes the RX FIFO.
+    fn flush_rx(&self) -> Result<(), RF24Error> {
+        let mut data_in = [0u8; 2];
+        self.command(&[Command::FLUSH_RX as u8, 0], &mut data_in)?;
+        Ok(())
+    }
+
+    /// Writes a payload to the TX FIFO.
+    fn write_payload(&self, data: &[u8]) -> Result<(), RF24Error> {
+        let mut data_out: Vec<u8> = vec![0; data.len() + 1];
+        let mut data_in: Vec<u8> = vec![0; data.len() + 1];
+        data_out[0] = Command::W_TX_PAYLOAD as u8;
+        data_out[1..].copy_from_slice(data);
+        self.command(&data_out, &mut data_in)?;
+        Ok(())
+    }
+
+    /// Enable CE pin to start transmission.
+    fn set_ce_high(&mut self) {
+        self.ce_pin.set_high();
+    }
+
+    /// Disable CE pin to stop transmission.
+    fn set_ce_low(&mut self) {
+        self.ce_pin.set_low();
     }
 }
 
@@ -355,7 +377,10 @@ impl Radio {
         self.rf24.write_register(Register::RF_SETUP, rf_setup)?;
 
         // Disable auto-ack
-        self.rf24.write_register(Register::FEATURE, EN_DYN_ACK)?;
+        self.rf24.write_register(Register::EN_AA, 0)?;
+
+        // Disable features
+        self.rf24.write_register(Register::FEATURE, 0)?;
 
         // Set payload size
         let payload_size: u8 = 13;
@@ -367,8 +392,8 @@ impl Radio {
         self.rf24.write_register(Register::RX_PW_P5, payload_size)?;
 
         // Flush RX and TX
-        self.rf24.write_register(Register::FLUSH_RX, 0)?;
-        self.rf24.write_register(Register::FLUSH_TX, 0)?;
+        self.rf24.flush_rx()?;
+        self.rf24.flush_tx()?;
 
         // Clear Status
         let status: u8 = RX_DR | TX_DS | MAX_RT;
@@ -384,7 +409,7 @@ impl Radio {
     }
 
     // Send a payload with no ack
-    pub fn send(&self, payload: &[u8]) -> Result<(), RF24Error> {
+    pub fn send(&mut self, payload: &[u8]) -> Result<(), RF24Error> {
         // Wait for TX FIFO to be empty
         'fifo_full: loop {
             let status = self.rf24.read_register(Register::STATUS)?;
@@ -395,15 +420,10 @@ impl Radio {
         }
 
         // Write payload
-        let mut data_out: Vec<u8> = vec![0; payload.len() + 1];
-        let mut data_in: Vec<u8> = vec![0; payload.len() + 1];
-        data_out[0] = Command::W_TX_PAYLOAD_NOACK as u8;
-        data_out[1..].copy_from_slice(payload);
-        self.rf24.command(&data_out, &mut data_in)?;
-
-        self.rf24.set_ce(true);
+        self.rf24.write_payload(payload)?;
+        self.rf24.set_ce_high();
         sleep(Duration::from_micros(15));
-        self.rf24.set_ce(false);
+        self.rf24.set_ce_low();
 
         // Clear Status
         let status: u8 = RX_DR | TX_DS | MAX_RT;
