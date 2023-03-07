@@ -28,7 +28,7 @@ fn test_radio() {
         let state = controller.get_state();
         radio.send(&state.to_bytes()).unwrap();
 
-        sleep(Duration::from_millis(1000));
+        // sleep(Duration::from_millis(1000));
     }
 
     println!("Shutdown!");
