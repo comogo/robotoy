@@ -1,15 +1,13 @@
-extern crate sdl2;
-
-use std::sync::{Arc, Mutex};
 use sdl2::{
-    controller::{Button, GameController, Axis},
+    controller::{Axis, Button, GameController},
     event::Event,
+    EventPump, GameControllerSubsystem,
 };
 
 const JOYSTICK_DEADZONE: i16 = 4000;
 
 #[derive(Debug)]
-struct ControllerState {
+pub struct ControllerState {
     x: bool,
     circle: bool,
     square: bool,
@@ -23,11 +21,11 @@ struct ControllerState {
     yaw: i16,
     throttle: i16,
     pitch: i16,
-    roll: i16
+    roll: i16,
 }
 
 impl ControllerState {
-    fn new() -> Self {
+    pub fn new() -> Self {
         ControllerState {
             x: false,
             circle: false,
@@ -42,8 +40,37 @@ impl ControllerState {
             yaw: 0,
             throttle: 0,
             pitch: 0,
-            roll: 0
+            roll: 0,
         }
+    }
+
+    pub fn to_bytes(&self) -> [u8; 13] {
+        let mut bytes: [u8; 13] = [0; 13];
+
+        let buttons: u8 = (self.x as u8)
+            | ((self.circle as u8) << 1)
+            | ((self.square as u8) << 2)
+            | ((self.triangle as u8) << 3)
+            | ((self.select as u8) << 4)
+            | ((self.start as u8) << 5)
+            | ((self.l1 as u8) << 6)
+            | ((self.r1 as u8) << 7);
+
+        bytes[0] = buttons;
+        bytes[1] = (self.l2 >> 8) as u8;
+        bytes[2] = self.l2 as u8;
+        bytes[3] = (self.r2 >> 8) as u8;
+        bytes[4] = self.r2 as u8;
+        bytes[5] = (self.yaw >> 8) as u8;
+        bytes[6] = self.yaw as u8;
+        bytes[7] = (self.throttle >> 8) as u8;
+        bytes[8] = self.throttle as u8;
+        bytes[9] = (self.pitch >> 8) as u8;
+        bytes[10] = self.pitch as u8;
+        bytes[11] = (self.roll >> 8) as u8;
+        bytes[12] = self.roll as u8;
+
+        bytes
     }
 
     pub fn update_button(&mut self, button: Button, value: bool) {
@@ -80,70 +107,82 @@ impl ControllerState {
     }
 }
 
-pub fn main() {
-    let sdl_context = sdl2::init().unwrap();
-    let controller_subsystem = sdl_context.game_controller().unwrap();
+struct Sdl {
+    sdl_context: sdl2::Sdl,
+    controller_subsystem: GameControllerSubsystem,
+    event_pump: EventPump,
+    controller: Option<GameController>,
+}
 
-    let mut event_pump = sdl_context.event_pump().unwrap();
-    let controller_state = Arc::new(Mutex::new(ControllerState::new()));
-    let mut controller: Option<GameController> = None;
-    let running = Arc::new(Mutex::new(true));
+pub struct Controller {
+    state: ControllerState,
+    sdl: Sdl,
+}
 
-    println!("Initialized!");
+impl Controller {
+    pub fn get_state(&self) -> &ControllerState {
+        &self.state
+    }
 
-    let thread_running = running.clone();
-    let thread_controller_state = controller_state.clone();
-    let debug_info= std::thread::spawn(move || loop {
-        if !*thread_running.lock().unwrap() {
-            println!("Shutting down debug thread...");
-            break;
-        }
-        println!("{:?}", thread_controller_state.lock().unwrap());
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    });
+    pub fn update_state(&mut self) -> bool {
+        let Sdl {
+            controller_subsystem,
+            event_pump,
+            controller,
+            ..
+        } = &mut self.sdl;
 
-    let main_running = running.clone();
-    let main_controller_state = controller_state.clone();
-    'running: loop {
+        let controller_state = &mut self.state;
+
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit {..} => {
-                    let mut running = main_running.lock().unwrap();
-                    *running = false;
-                    break 'running
-                },
+                Event::Quit { .. } => {
+                    return false;
+                }
                 Event::ControllerDeviceAdded { which, .. } => {
                     if controller_subsystem.num_joysticks().unwrap() > 1 {
-                        println!("More than one controller attached. Only one can be used at a time");
+                        println!(
+                            "More than one controller attached. Only one can be used at a time"
+                        );
                     } else {
                         let new_controller = controller_subsystem.open(which).unwrap();
                         println!("Controller attached: {}", new_controller.name());
-                        controller = Some(new_controller);
+                        *controller = Some(new_controller);
                     }
-                },
+                }
                 Event::ControllerDeviceRemoved { which, .. } => {
-                    controller = None;
+                    *controller = None;
                     println!("Joystick detached: {}", which);
-                },
+                }
                 Event::ControllerAxisMotion { axis, value, .. } => {
-                    let mut controller_state = main_controller_state.lock().unwrap();
                     controller_state.update_axis(axis, value);
-                },
-                Event::ControllerButtonDown { button, ..} => {
-                    let mut controller_state = main_controller_state.lock().unwrap();
+                }
+                Event::ControllerButtonDown { button, .. } => {
                     controller_state.update_button(button, true);
-                },
+                }
                 Event::ControllerButtonUp { button, .. } => {
-                    let mut controller_state = main_controller_state.lock().unwrap();
                     controller_state.update_button(button, false);
-                },
+                }
                 _ => {}
             }
         }
-    }
 
-    let c = controller.unwrap();
-    drop(c);
-    debug_info.join().unwrap();
-    println!("Shutdown!");
+        true
+    }
+}
+
+pub fn init() -> Controller {
+    let sdl_context = sdl2::init().unwrap();
+    let controller_subsystem = sdl_context.game_controller().unwrap();
+    let event_pump = sdl_context.event_pump().unwrap();
+
+    Controller {
+        state: ControllerState::new(),
+        sdl: Sdl {
+            sdl_context,
+            controller_subsystem,
+            event_pump,
+            controller: None,
+        },
+    }
 }
