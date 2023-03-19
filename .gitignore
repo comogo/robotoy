@@ -1,6 +1,7 @@
-build/
-target/
-vendor/
+controller/build/
+controller/target/
+controller/vendor/
+robot/.pio
 
 # Prerequisites
 *.d
