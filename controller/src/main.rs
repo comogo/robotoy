@@ -25,10 +25,12 @@ pub fn main() {
     radio.print_rf_details();
 
     'running: loop {
-        let should_continue = controller.update_state();
-
-        if should_continue == false {
-            break 'running;
+        match controller.update_state() {
+            Ok(_) => {}
+            Err(e) => {
+                println!("Shutting down: {}", e);
+                break 'running;
+            }
         }
 
         let state = controller.get_state();
