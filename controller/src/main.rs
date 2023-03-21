@@ -9,11 +9,17 @@ use rf24::{DataRate, PowerLevel, Radio};
 use std::thread::sleep;
 use std::time::Duration;
 
-fn test_radio() {
-    let mut controller: Controller = controller::init();
-    let mut radio = Radio::new("aaaaa", DataRate::_250Kbps, PowerLevel::_0dBm, 125, 25).unwrap();
+pub fn main() {
+    let channel: u8 = 125;
+    let ce_pin: u8 = 25;
+    let address: &str = "aaaaa";
+    let data_rate: DataRate = DataRate::_250Kbps;
+    let power_level: PowerLevel = PowerLevel::_0dBm;
 
-    println!("Initialized!");
+    let mut controller: Controller = controller::init();
+    let mut radio: Radio = Radio::new(address, data_rate, power_level, channel, ce_pin).unwrap();
+
+    println!("Starting up");
 
     radio.configure().unwrap();
     radio.print_rf_details();
@@ -27,13 +33,5 @@ fn test_radio() {
 
         let state = controller.get_state();
         radio.send(&state.to_bytes()).unwrap();
-
-        // sleep(Duration::from_millis(1000));
     }
-
-    println!("Shutdown!");
-}
-
-pub fn main() {
-    test_radio();
 }
