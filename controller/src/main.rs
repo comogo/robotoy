@@ -34,10 +34,6 @@ fn test_radio() {
     println!("Shutdown!");
 }
 
-fn _test_rf() {
-    let radio = Radio::new("aaaaa", DataRate::_250Kbps, PowerLevel::_0dBm, 125, 25).unwrap();
-}
-
 pub fn main() {
     test_radio();
 }
