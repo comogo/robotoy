@@ -63,7 +63,7 @@ void loop()
 
     if (controller.getL2() == 0 && controller.getR2() == 0)
     {
-      motor.stop();
+      motor.setSpeed(0);
     }
     else
     {

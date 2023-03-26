@@ -6,7 +6,7 @@ Motor::Motor(int standby_pin_num, int pwm_pin_num, int forward_pin_num, int back
   pwm_pin = pwm_pin_num;
   forward_pin = forward_pin_num;
   backward_pin = backward_pin_num;
-  direction = MOTOR_DIRECTION_FORWARD;
+  direction = 0;
   speed = 0;
   state = MOTOR_STATE_STOPPED;
 }

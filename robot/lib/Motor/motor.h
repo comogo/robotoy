@@ -20,8 +20,8 @@ private:
 public:
   Motor(int standby_pin, int pwm_pin, int forward_pin, int backward_pin);
   void initialize();
-  void setSpeed(int speed);
-  void setDirection(int direction);
+  void setSpeed(int newSpeed);
+  void setDirection(int newDirection);
   void stop();
   bool isRunning();
 };
