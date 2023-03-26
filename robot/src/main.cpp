@@ -3,6 +3,7 @@
 #include <radio.h>
 #include <motor.h>
 #include <controller.h>
+#include <led.h>
 
 /*
   PWM pins: 3, 5, 6, 9, 10, 11
@@ -12,7 +13,7 @@
 #define MOTOR_PWM 3 // PWM
 #define MOTOR_FORWARD 4
 #define MOTOR_BACKWARD 5
-#define LED 6 // PWM
+#define LED_PIN 6
 #define RADIO_CE 7
 #define RADIO_CSN 8
 #define RADIO_CHANNEL 125
@@ -26,6 +27,7 @@
 uint8_t address[6] = "aaaaa";
 Radio radio(RADIO_CE, RADIO_CSN, RADIO_CHANNEL, address);
 Motor motor(MOTOR_STANDBY, MOTOR_PWM, MOTOR_FORWARD, MOTOR_BACKWARD);
+Led led(LED_PIN);
 Servo servo;
 Controller controller;
 uint8_t payload[13];
@@ -36,19 +38,21 @@ int16_t lastRotation = 0;
 
 void setup()
 {
-  pinMode(LED, OUTPUT);
-  analogWrite(LED, 100);
-
+  led.initialize();
+  led.on();
   radio.initialize();
   motor.initialize();
   servo.attach(SERVO);
   servo.write(rotation);
+  delay(1000);
+  led.off();
 }
 
 void loop()
 {
   if (radio.available())
   {
+    led.fastBlink();
     radio.read(&payload);
     controller.load_state_from_payload(payload);
 
@@ -81,11 +85,8 @@ void loop()
 
       motor.setSpeed(speed);
     }
-  }
-
-  if (lastSpeed != speed)
-  {
-    analogWrite(LED, speed);
+  } else {
+    led.slowBlink();
   }
 
   lastSpeed = speed;

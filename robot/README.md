@@ -16,3 +16,8 @@
 ### Breadboard
 
 ![Breadboard](https://raw.githubusercontent.com/comogo/robotoy/main/resources/robot_breadboard.png)
+
+
+## Use
+
+The LED on PIN 6 will blink slow when the radio is not connected, and fast when it is connected.
