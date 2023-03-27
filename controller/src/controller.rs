@@ -124,7 +124,10 @@ impl Controller {
         &self.state
     }
 
-    pub fn update_state(&mut self) -> bool {
+    /// Listen for the SDL events and updates the controller state when a controller event is received.
+    ///
+    /// Returns an error if the user has quit the application.
+    pub fn update_state(&mut self) -> Result<(), String> {
         let Sdl {
             controller_subsystem,
             event_pump,
@@ -137,12 +140,12 @@ impl Controller {
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => {
-                    return false;
+                    return Err(String::from("Quit"));
                 }
                 Event::ControllerDeviceAdded { which, .. } => {
                     if controller_subsystem.num_joysticks().unwrap() > 1 {
                         println!(
-                            "More than one controller attached. Only one can be used at a time"
+                            "More than one controller was attached. Only one can be used at a time."
                         );
                     } else {
                         let new_controller = controller_subsystem.open(which).unwrap();
@@ -167,7 +170,7 @@ impl Controller {
             }
         }
 
-        true
+        Ok(())
     }
 }
 
