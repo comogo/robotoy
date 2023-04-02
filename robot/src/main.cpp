@@ -10,9 +10,9 @@
 */
 
 #define MOTOR_STANDBY 2
-#define MOTOR_PWM 3 // PWM
+#define MOTOR_PWM 5 // PWM
 #define MOTOR_FORWARD 4
-#define MOTOR_BACKWARD 5
+#define MOTOR_BACKWARD 3
 #define LED_PIN 6
 #define RADIO_CE 7
 #define RADIO_CSN 8
@@ -48,45 +48,55 @@ void setup()
   led.off();
 }
 
-int handle_rotation(int16_t value, int lastValue) {
+int handle_rotation(int16_t value, int lastValue)
+{
   int prepared_value = map(value, -32768, 32767, MAX_ROTATION, MIN_ROTATION);
 
-  if (prepared_value != lastValue) {
+  if (prepared_value != lastValue)
+  {
     servo.write(prepared_value);
   }
 
   return prepared_value;
-    }
+}
 
-uint16_t handle_direction(uint16_t forward_speed, uint16_t backward_speed, uint16_t lastSpeed) {
+uint16_t handle_direction(uint16_t forward_speed, uint16_t backward_speed, uint16_t lastSpeed)
+{
   uint16_t speed = 0;
 
-  if (backward_speed != 0) {
-        motor.setDirection(MOTOR_DIRECTION_BACKWARD);
+  if (backward_speed != 0)
+  {
+    motor.setDirection(MOTOR_DIRECTION_BACKWARD);
     speed = map(backward_speed, 0, 32768, 0, MAX_SPEED);
-      }
+  }
 
-  if (forward_speed != 0) {
-        motor.setDirection(MOTOR_DIRECTION_FORWARD);
+  if (forward_speed != 0)
+  {
+    motor.setDirection(MOTOR_DIRECTION_FORWARD);
     speed = map(forward_speed, 0, 32768, 0, MAX_SPEED);
-      }
+  }
 
-  if (speed != lastSpeed) {
-      motor.setSpeed(speed);
-    }
+  if (speed != lastSpeed)
+  {
+    motor.setSpeed(speed);
+  }
 
   return speed;
 }
 
-void loop() {
-  if (radio.available()) {
+void loop()
+{
+  if (radio.available())
+  {
     led.fastBlink();
     radio.read(&payload);
     controller.load_state_from_payload(payload);
 
     lastRotation = handle_rotation(controller.getYaw(), lastRotation);
     lastSpeed = handle_direction(controller.getR2(), controller.getL2(), lastSpeed);
-  } else {
+  }
+  else
+  {
     led.slowBlink();
   }
 }
