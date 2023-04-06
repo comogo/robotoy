@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 #include <Servo.h>
 #include <radio.h>
 #include <motor.h>
@@ -19,12 +21,17 @@
 #define RADIO_CHANNEL 125
 #define SERVO 9 // PWM
 
+#define LCD_ADDRESS 0x27
+#define LCD_COLS 16
+#define LCD_ROWS 2
+
 #define MAX_SPEED 250
 #define MAX_ROTATION 180
 #define MIN_ROTATION 0
 #define CENTER_ROTATION 90
 
 uint8_t address[6] = "aaaaa";
+LiquidCrystal_I2C lcd(LCD_ADDRESS);
 Radio radio(RADIO_CE, RADIO_CSN, RADIO_CHANNEL, address);
 Motor motor(MOTOR_STANDBY, MOTOR_PWM, MOTOR_FORWARD, MOTOR_BACKWARD);
 Led led(LED_PIN);
@@ -38,6 +45,9 @@ int lastRotation = 0;
 
 void setup()
 {
+  lcd.begin(LCD_COLS, LCD_ROWS);
+  lcd.clear();
+  lcd.print("Initializing...");
   led.initialize();
   led.on();
   radio.initialize();
@@ -89,14 +99,21 @@ void loop()
   if (radio.available())
   {
     led.fastBlink();
+    lcd.setCursor(0, 0);
+    lcd.print("C");
     radio.read(&payload);
     controller.load_state_from_payload(payload);
 
     lastRotation = handle_rotation(controller.getYaw(), lastRotation);
     lastSpeed = handle_direction(controller.getR2(), controller.getL2(), lastSpeed);
+    lcd.setCursor(0, 1);
+    lcd.print("R: ");
+    lcd.print(lastRotation);
   }
   else
   {
     led.slowBlink();
+    lcd.setCursor(0, 0);
+    lcd.print("?");
   }
 }
