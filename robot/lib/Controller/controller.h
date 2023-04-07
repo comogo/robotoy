@@ -5,20 +5,28 @@
 
 class Controller {
   private:
-    bool r1;
-    bool l1;
-    bool start;
-    bool select;
-    bool triangle;
-    bool square;
-    bool circle;
-    bool cross;
-    uint16_t l2; // 0 to 32_768
-    uint16_t r2; // 0 to 32_768
-    int16_t yaw; // -32_768 to 32_768
-    int16_t throttle; // -32_768 to 32_768
-    int16_t pitch; // -32_768 to 32_768
-    int16_t roll; // -32_768 to 32_768
+    bool m_r1;
+    bool m_l1;
+    bool m_start;
+    bool m_select;
+    bool m_triangle;
+    bool m_square;
+    bool m_circle;
+    bool m_cross;
+    uint16_t m_l2; // 0 to 32_768
+    uint16_t m_r2; // 0 to 32_768
+    int16_t m_yaw; // -32_768 to 32_768
+    int16_t m_throttle; // -32_768 to 32_768
+    int16_t m_pitch; // -32_768 to 32_768
+    int16_t m_roll; // -32_768 to 32_768
+    bool m_selectReleased;
+    bool m_startReleased;
+    bool m_triangleReleased;
+    bool m_squareReleased;
+    bool m_circleReleased;
+    bool m_crossReleased;
+    bool m_l1Released;
+    bool m_r1Released;
 
   public:
     Controller();
@@ -37,6 +45,14 @@ class Controller {
     int16_t getThrottle();
     int16_t getPitch();
     int16_t getRoll();
+    bool isSelectReleased();
+    bool isStartReleased();
+    bool isTriangleReleased();
+    bool isSquareReleased();
+    bool isCircleReleased();
+    bool isCrossReleased();
+    bool isL1Released();
+    bool isR1Released();
 };
 
 #endif

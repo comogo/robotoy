@@ -24,6 +24,7 @@ public:
   bool available();
   void read(void *payload);
   bool is_connected();
+  bool is_initialized();
 };
 
 #endif

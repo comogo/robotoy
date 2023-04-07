@@ -17,15 +17,17 @@ void Radio::initialize()
     return;
   }
 
-  m_rf24.begin();
-  m_rf24.setPALevel(RF24_PA_MAX);
-  m_rf24.setDataRate(RF24_250KBPS);
-  m_rf24.setPayloadSize(RADIO_PAYLOAD_SIZE);
-  m_rf24.setAutoAck(false);
-  m_rf24.setChannel(m_channel);
-  m_rf24.openReadingPipe(0, m_address);
-  m_rf24.startListening();
-  m_initialized = true;
+  if (m_rf24.begin())
+  {
+    m_rf24.setPALevel(RF24_PA_MAX);
+    m_rf24.setDataRate(RF24_250KBPS);
+    m_rf24.setPayloadSize(RADIO_PAYLOAD_SIZE);
+    m_rf24.setAutoAck(false);
+    m_rf24.setChannel(m_channel);
+    m_rf24.openReadingPipe(0, m_address);
+    m_rf24.startListening();
+    m_initialized = true;
+  }
 }
 
 bool Radio::available()
@@ -50,8 +52,13 @@ void Radio::read(void *payload)
   uint8_t bytes = m_rf24.getPayloadSize();
   m_rf24.read(payload, bytes);
 }
-    
+
 bool Radio::is_connected()
 {
-  return m_connected;
+  return m_initialized && m_connected;
+}
+
+bool Radio::is_initialized()
+{
+  return m_initialized;
 }
