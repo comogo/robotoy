@@ -48,6 +48,19 @@ int lastRotation = 0;
 bool allowDisplayNotConnected = true;
 bool allowDisplayConnected = true;
 
+// Apply the belzier cubic curve to the value between the range of -128 and 127
+int belzier(int value, uint8_t power)
+{
+  if (value > 0)
+  {
+    return map(pow(value, 3), 0, pow(127, 3), 0, 127);
+  }
+  else
+  {
+    return map(pow(value, 3), 0, pow(-128, 3), 0, -128);
+  }
+}
+
 void store_rotation_middle(int rotation)
 {
   EEPROM.put(EEPROM_ROTAION_MIDDLE_ADDRESS, rotation);
@@ -70,7 +83,15 @@ int initialize_rotation_middle()
 
 int handle_rotation(int16_t value, int lastValue, int center)
 {
-  int prepared_value = map(value, -32768, 32767, center - ROTATION_LIMIT, center + ROTATION_LIMIT);
+  // Map to int8_t
+  int prepared_value = map(value, -32768, 32767, -128, 127);
+
+  // apply a cubic bezier curve to make the rotation more smooth
+  prepared_value = belzier(prepared_value, 3);
+
+  // limit the rotation to 30 degrees from the center
+  prepared_value = map(prepared_value, -128, 127, max(center - ROTATION_LIMIT, 60), min(center + ROTATION_LIMIT, 140));
+
 
   if (prepared_value != lastValue)
   {
