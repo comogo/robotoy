@@ -7,6 +7,7 @@
 #include <controller.h>
 #include <led.h>
 #include <state.h>
+#include <timer.h>
 #include <utils.h>
 
 /*
@@ -49,6 +50,10 @@ int lastRotation = 0;
 bool allowDisplayNotConnected = true;
 bool allowDisplayConnected = true;
 
+Timer packageConnectionSpeedTimer(1000);
+int connectionSpeedRate = 0;
+int packageCounter = 0;
+int lastPackageCounter = 0;
 
 void store_rotation_middle(int rotation)
 {
@@ -133,10 +138,22 @@ void state_running()
   if (allowDisplayConnected)
   {
     lcd.setCursor(0, 0);
-    lcd.print("C");
+    lcd.print("C ");
     lcd.setCursor(0, 1);
     lcd.print("R: ");
     allowDisplayConnected = false;
+  }
+
+  if (packageConnectionSpeedTimer.isReady())
+  {
+    connectionSpeedRate = (lastPackageCounter + packageCounter) / 2;
+    lcd.setCursor(2, 0);
+    char rate[4];
+    toStringWithPadding(rate, connectionSpeedRate, 3, ' ');
+    lcd.print(rate);
+    lcd.print("p/s");
+    lastPackageCounter = packageCounter;
+    packageCounter = 0;
   }
 
   lcd.setCursor(3, 1);
@@ -185,12 +202,14 @@ void setup()
   led.off();
   lcd.clear();
   state.setRunningState();
+  packageConnectionSpeedTimer.start();
 }
 
 void loop()
 {
   if (radio.is_initialized() && radio.available())
   {
+    packageCounter++;
     allowDisplayNotConnected = true;
     radio.read(&payload);
     controller.load_state_from_payload(payload);
@@ -207,11 +226,13 @@ void loop()
   {
     led.slowBlink();
     allowDisplayConnected = true;
+    lastPackageCounter = 0;
+    packageCounter = 0;
 
     if (state.isRunning() && allowDisplayNotConnected)
     {
       lcd.setCursor(0, 0);
-      lcd.print("?");
+      lcd.print("?               ");
       allowDisplayNotConnected = false;
     }
   }
