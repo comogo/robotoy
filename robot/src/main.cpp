@@ -8,6 +8,7 @@
 #include <led.h>
 #include <state.h>
 #include <timer.h>
+#include <voltimeter.h>
 #include <utils.h>
 
 /*
@@ -23,6 +24,7 @@
 #define RADIO_CSN 8
 #define RADIO_CHANNEL 125
 #define SERVO 9 // PWM
+#define VOLTIMETER_PIN A0
 
 #define LCD_ADDRESS 0x27
 #define LCD_COLS 16
@@ -40,6 +42,7 @@ Led led(LED_PIN);
 Servo servo;
 Controller controller;
 State state;
+Voltimeter voltimeter(VOLTIMETER_PIN);
 uint8_t payload[13];
 uint8_t speed = 0;
 uint8_t lastSpeed = speed;
@@ -119,6 +122,19 @@ uint16_t handle_direction(uint16_t forward_speed, uint16_t backward_speed, uint1
   return speed;
 }
 
+void handle_voltimeter()
+{
+  voltimeter.read();
+
+  if (voltimeter.isFresh() && !state.isSetup())
+  {
+    lcd.setCursor(0, 1);
+    lcd.print("BT: ");
+    lcd.print(voltimeter.getVoltage());
+    lcd.print("V");
+  }
+}
+
 void state_running()
 {
   if (controller.isSelectReleased() && state.bounced())
@@ -139,8 +155,6 @@ void state_running()
   {
     lcd.setCursor(0, 0);
     lcd.print("C ");
-    lcd.setCursor(0, 1);
-    lcd.print("R: ");
     allowDisplayConnected = false;
   }
 
@@ -155,10 +169,6 @@ void state_running()
     lastPackageCounter = packageCounter;
     packageCounter = 0;
   }
-
-  lcd.setCursor(3, 1);
-  lcd.print(lastRotation);
-  lcd.print("   ");
 }
 
 void state_setup() {
@@ -191,7 +201,7 @@ void setup()
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print("Initializing");
-  delay(3000);
+  voltimeter.initialize();
   led.initialize();
   led.on();
   rotationMiddle = initialize_rotation_middle();
@@ -236,4 +246,6 @@ void loop()
       allowDisplayNotConnected = false;
     }
   }
+
+  handle_voltimeter();
 }
