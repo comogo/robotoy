@@ -6,6 +6,7 @@
 #define STATE_INITIALIZING 0
 #define STATE_RUNNING 1
 #define STATE_SETUP 2
+#define STATE_BOUNCE_DELAY 1000
 
 class State
 {

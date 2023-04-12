@@ -2,11 +2,14 @@
 
 Led::Led(uint8_t pin) {
   m_pin = pin;
+  m_fast_timer = Timer(FAST_BLINK_DELAY);
+  m_slow_timer = Timer(SLOW_BLINK_DELAY);
 };
 
 void Led::initialize() {
   m_state = false;
-  m_lastBlink = 0;
+  m_fast_timer.start();
+  m_slow_timer.start();
   pinMode(m_pin, OUTPUT);
   off();
 };
@@ -34,15 +37,15 @@ void Led::toggle() {
 };
 
 void Led::fastBlink() {
-  if (millis() - m_lastBlink > FAST_BLINK_DELAY) {
+  if (m_fast_timer.isReady(false)) {
     toggle();
-    m_lastBlink = millis();
+    m_fast_timer.reset();
   }
 };
 
 void Led::slowBlink() {
-  if (millis() - m_lastBlink > SLOW_BLINK_DELAY) {
+  if (m_slow_timer.isReady(false)) {
     toggle();
-    m_lastBlink = millis();
+    m_slow_timer.reset();
   }
 };

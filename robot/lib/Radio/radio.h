@@ -3,6 +3,7 @@
 
 #include <SPI.h>
 #include <RF24.h>
+#include <timer.h>
 
 #define RADIO_CHANNEL 125
 #define RADIO_PAYLOAD_SIZE 13
@@ -16,7 +17,7 @@ private:
   uint8_t m_channel;
   bool m_connected;
   bool m_initialized;
-  unsigned long m_last_message_time;
+  Timer m_timeout;
 
 public:
   Radio(int ce_pin, int csn_pin, int channel, uint8_t *address);

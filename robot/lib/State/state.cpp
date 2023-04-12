@@ -36,5 +36,5 @@ bool State::isSetup()
 
 bool State::bounced()
 {
-  return millis() - m_lastStateTime > 1000;
+  return millis() - m_lastStateTime > STATE_BOUNCE_DELAY;
 }
