@@ -7,6 +7,7 @@
 #include <controller.h>
 #include <led.h>
 #include <state.h>
+#include <utils.h>
 
 /*
   PWM pins: 3, 5, 6, 9, 10, 11
@@ -48,18 +49,6 @@ int lastRotation = 0;
 bool allowDisplayNotConnected = true;
 bool allowDisplayConnected = true;
 
-// Apply the belzier cubic curve to the value between the range of -128 and 127
-int belzier(int value, uint8_t power)
-{
-  if (value > 0)
-  {
-    return map(pow(value, 3), 0, pow(127, 3), 0, 127);
-  }
-  else
-  {
-    return map(pow(value, 3), 0, pow(-128, 3), 0, -128);
-  }
-}
 
 void store_rotation_middle(int rotation)
 {
