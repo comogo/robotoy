@@ -11,11 +11,12 @@ class Led {
   private:
     uint8_t m_pin;
     bool m_state;
-    Timer m_fast_timer;
-    Timer m_slow_timer;
+    Timer *m_fast_timer;
+    Timer *m_slow_timer;
 
   public:
     Led(uint8_t pin);
+    ~Led();
     void initialize();
     void on();
     void off();

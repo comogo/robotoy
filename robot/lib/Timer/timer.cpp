@@ -8,11 +8,6 @@ Timer::Timer(unsigned long interval)
   m_running = false;
 }
 
-Timer::Timer()
-{
-  Timer(TIMER_DEFAULT_INTERVAL);
-}
-
 void Timer::setInterval(unsigned long interval)
 {
   m_interval = interval;
@@ -33,33 +28,37 @@ bool Timer::isRunning()
   return m_running;
 }
 
-bool Timer::isReady()
+bool Timer::expired()
 {
-  return isReady(true);
+  return expired(true);
 }
 
-bool Timer::isReady(bool autoReset)
+bool Timer::expired(bool autoReset)
 {
-  if (m_running && millis() - m_lastTime >= m_interval)
+  if (!m_running)
+  {
+    return false;
+  }
+
+  unsigned long currentTime = millis();
+
+  if (currentTime - m_lastTime >= m_interval)
   {
     if (autoReset)
     {
-      reset();
+      reset(currentTime);
     }
     return true;
   }
   return false;
 }
 
-void Timer::tryRun(void (*callback)())
+void Timer::reset(unsigned long currentTime)
 {
-  if (isReady())
-  {
-    callback();
-  }
+  m_lastTime = currentTime;
 }
 
 void Timer::reset()
 {
-  m_lastTime = millis();
+  reset(millis());
 }
