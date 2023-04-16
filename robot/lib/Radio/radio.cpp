@@ -5,7 +5,7 @@ Radio::Radio(int ce_pin, int csn_pin, int channel, uint8_t *address)
   m_channel = channel;
   m_connected = false;
   m_initialized = false;
-  m_timeout = Timer(RADIO_TIMEOUT);
+  m_timeout = new Timer(RADIO_TIMEOUT);
   memcpy(m_address, address, 6);
   m_rf24 = RF24(ce_pin, csn_pin);
 }
@@ -26,9 +26,10 @@ void Radio::initialize()
     m_rf24.setChannel(m_channel);
     m_rf24.openReadingPipe(0, m_address);
     m_rf24.startListening();
-    m_timeout.start();
     m_initialized = true;
   }
+
+  m_timeout->start();
 }
 
 bool Radio::available()
@@ -37,10 +38,10 @@ bool Radio::available()
   bool available_data = m_rf24.available(&pipe);
   if (available_data)
   {
-    m_timeout.reset();
+    m_timeout->reset();
     m_connected = true;
   }
-  else if (m_timeout.isReady(false))
+  else if (m_connected && m_timeout->expired(false))
   {
     m_connected = false;
   }

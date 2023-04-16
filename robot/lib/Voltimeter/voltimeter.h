@@ -11,12 +11,13 @@ class Voltimeter
 {
   private:
     int m_pin;
-    Timer m_timer;
     float m_voltage;
     bool m_fresh;
+    Timer *m_timer;
 
   public:
     Voltimeter(int pin);
+    ~Voltimeter();
     void initialize();
     void read();
     float getVoltage();

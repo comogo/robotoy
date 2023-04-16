@@ -17,7 +17,7 @@ private:
   uint8_t m_channel;
   bool m_connected;
   bool m_initialized;
-  Timer m_timeout;
+  Timer *m_timeout;
 
 public:
   Radio(int ce_pin, int csn_pin, int channel, uint8_t *address);

@@ -1,8 +1,6 @@
 #ifndef TIMER_H
 #define TIMER_H
 
-#define TIMER_DEFAULT_INTERVAL 1000
-
 class Timer
 {
   private:
@@ -12,14 +10,13 @@ class Timer
 
   public:
     Timer(unsigned long interval);
-    Timer();
     void setInterval(unsigned long interval);
     void start();
     void stop();
     void reset();
+    void reset(unsigned long currentTime);
     bool isRunning();
-    bool isReady();
-    bool isReady(bool autoReset);
-    void tryRun(void (*callback)());
+    bool expired();
+    bool expired(bool autoReset);
 };
 #endif

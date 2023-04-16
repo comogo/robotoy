@@ -4,22 +4,27 @@
 Voltimeter::Voltimeter(int pin)
 {
   m_pin = pin;
-  m_timer = Timer(VOLTIMETER_INTERVAL);
+  m_timer = new Timer(VOLTIMETER_INTERVAL);
   m_voltage = 0;
   m_fresh = false;
+}
+
+Voltimeter::~Voltimeter()
+{
+  delete m_timer;
 }
 
 void Voltimeter::initialize()
 {
   pinMode(m_pin, INPUT);
-  m_timer.start();
+  m_timer->start();
 }
 
 // Apply the voltage divider formula to get the voltage
 // Vin = (Vout * (R1 + R2)) / R2
 void Voltimeter::read()
 {
-  if (m_timer.isReady())
+  if (m_timer->expired())
   {
     // 5V is the max voltage of the Arduino
     // 1024 is the max value of analogRead
