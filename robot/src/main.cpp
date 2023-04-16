@@ -49,14 +49,9 @@ uint8_t lastSpeed = speed;
 int rotationMiddle = 0;
 int rotation = 0;
 int lastRotation = 0;
-
+int lastConnectionSpeedRate = 0;
 bool allowDisplayNotConnected = true;
 bool allowDisplayConnected = true;
-
-Timer packageConnectionSpeedTimer(1000);
-int connectionSpeedRate = 0;
-int packageCounter = 0;
-int lastPackageCounter = 0;
 
 void store_rotation_middle(int rotation)
 {
@@ -88,7 +83,6 @@ int handle_rotation(int16_t value, int lastValue, int center)
 
   // limit the rotation to 30 degrees from the center
   prepared_value = map(prepared_value, -128, 127, max(center - ROTATION_LIMIT, 60), min(center + ROTATION_LIMIT, 140));
-
 
   if (prepared_value != lastValue)
   {
@@ -158,20 +152,19 @@ void state_running()
     allowDisplayConnected = false;
   }
 
-  if (packageConnectionSpeedTimer.isReady())
+  int rate = radio.getConnectionSpeedRate();
+  if (lastConnectionSpeedRate != rate)
   {
-    connectionSpeedRate = (lastPackageCounter + packageCounter) / 2;
     lcd.setCursor(2, 0);
     char rate[4];
     toStringWithPadding(rate, connectionSpeedRate, 3, ' ');
     lcd.print(rate);
     lcd.print("p/s");
-    lastPackageCounter = packageCounter;
-    packageCounter = 0;
   }
 }
 
-void state_setup() {
+void state_setup()
+{
   if (controller.isSelectReleased() && state.bounced())
   {
     state.setRunningState();
@@ -212,14 +205,12 @@ void setup()
   led.off();
   lcd.clear();
   state.setRunningState();
-  packageConnectionSpeedTimer.start();
 }
 
 void loop()
 {
-  if (radio.is_initialized() && radio.available())
+  if (radio.isInitialized() && radio.available())
   {
-    packageCounter++;
     allowDisplayNotConnected = true;
     radio.read(&payload);
     controller.load_state_from_payload(payload);
@@ -236,8 +227,6 @@ void loop()
   {
     led.slowBlink();
     allowDisplayConnected = true;
-    lastPackageCounter = 0;
-    packageCounter = 0;
 
     if (state.isRunning() && allowDisplayNotConnected)
     {
