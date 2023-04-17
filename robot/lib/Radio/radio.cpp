@@ -7,7 +7,6 @@ Radio::Radio(int ce_pin, int csn_pin, int channel, uint8_t *address)
   m_initialized = false;
   m_connectionSpeedRate = 0;
   m_packageCounter = 0;
-  m_lastPackageCounter = 0;
   m_timeout = new Timer(RADIO_TIMEOUT);
   m_packageConnectionSpeedTimer = new Timer(RADIO_CONNECTION_SPEED_MEASURE_INTERVAL);
   memcpy(m_address, address, 6);
@@ -65,7 +64,6 @@ bool Radio::available()
     m_connected = false;
     m_connectionSpeedRate = 0;
     m_packageCounter = 0;
-    m_lastPackageCounter = 0;
   }
 
   return available_data;
@@ -91,8 +89,7 @@ void Radio::calculateConnectionSpeed()
 {
   if (m_packageConnectionSpeedTimer->expired(true))
   {
-    m_connectionSpeedRate = (m_lastPackageCounter + m_packageCounter) / 2;
-    m_lastPackageCounter = m_packageCounter;
+    m_connectionSpeedRate = m_packageCounter / (RADIO_CONNECTION_SPEED_MEASURE_INTERVAL / 1000);
     m_packageCounter = 0;
   }
 }

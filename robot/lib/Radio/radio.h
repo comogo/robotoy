@@ -20,7 +20,6 @@ private:
   bool m_initialized;
   int m_connectionSpeedRate;
   int m_packageCounter;
-  int m_lastPackageCounter;
   Timer *m_timeout;
   Timer *m_packageConnectionSpeedTimer;
   void calculateConnectionSpeed();
