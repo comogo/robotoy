@@ -32,12 +32,21 @@ void Lcd::showConnected()
   m_lcd->print("C ");
 }
 
-void Lcd::showVoltage(float voltage)
+void Lcd::showPowerStats(float voltage, float current)
 {
   m_lcd->setCursor(0, 1);
-  m_lcd->print("BT: ");
   m_lcd->print(voltage);
-  m_lcd->print("V");
+  m_lcd->print("V ");
+
+  if (current < 1)
+  {
+    int currentMilli = current * 1000;
+    m_lcd->print(currentMilli);
+    m_lcd->print("mA");
+  } else {
+    m_lcd->print(current);
+    m_lcd->print("A");
+  }
 }
 
 void Lcd::showConnectionSpeed(int connectionSpeedRate)

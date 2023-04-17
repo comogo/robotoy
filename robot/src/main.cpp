@@ -25,6 +25,7 @@
 #define RADIO_CHANNEL 125
 #define SERVO 9 // PWM
 #define VOLTIMETER_PIN A0
+#define CURRENT_PIN A1
 
 #define MAX_SPEED 250
 #define ROTATION_LIMIT 30
@@ -38,7 +39,7 @@ Led led(LED_PIN);
 Servo servo;
 Controller controller;
 State state;
-Voltimeter voltimeter(VOLTIMETER_PIN);
+Voltimeter voltimeter(VOLTIMETER_PIN, CURRENT_PIN);
 uint8_t payload[13];
 uint8_t speed = 0;
 uint8_t lastSpeed = speed;
@@ -118,7 +119,7 @@ void handle_voltimeter()
 
   if (voltimeter.isFresh() && !state.isSetup())
   {
-    lcd.showVoltage(voltimeter.getVoltage());
+    lcd.showPowerStats(voltimeter.getVoltage(), voltimeter.getCurrent());
   }
 }
 

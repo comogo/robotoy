@@ -21,7 +21,7 @@ public:
   void showDisconnected();
   void showConnected();
   void showRotation(int16_t rotation);
-  void showVoltage(float voltage);
+  void showPowerStats(float voltage, float current);
   void showConnectionSpeed(int connectionSpeed);
   void showState(State state);
   void showSaved();
