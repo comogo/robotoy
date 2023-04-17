@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <LiquidCrystal_I2C.h>
 #include <EEPROM.h>
 #include <Servo.h>
 #include <radio.h>
@@ -9,6 +8,7 @@
 #include <state.h>
 #include <timer.h>
 #include <voltimeter.h>
+#include <lcd.h>
 #include <utils.h>
 
 /*
@@ -26,16 +26,12 @@
 #define SERVO 9 // PWM
 #define VOLTIMETER_PIN A0
 
-#define LCD_ADDRESS 0x27
-#define LCD_COLS 16
-#define LCD_ROWS 2
-
 #define MAX_SPEED 250
 #define ROTATION_LIMIT 30
 #define EEPROM_ROTAION_MIDDLE_ADDRESS 0
 
 uint8_t address[6] = "aaaaa";
-LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COLS, LCD_ROWS);
+Lcd lcd(LCD_ADDRESS, LCD_COLS, LCD_ROWS);
 Radio radio(RADIO_CE, RADIO_CSN, RADIO_CHANNEL, address);
 Motor motor(MOTOR_STANDBY, MOTOR_PWM, MOTOR_FORWARD, MOTOR_BACKWARD);
 Led led(LED_PIN);
@@ -122,10 +118,7 @@ void handle_voltimeter()
 
   if (voltimeter.isFresh() && !state.isSetup())
   {
-    lcd.setCursor(0, 1);
-    lcd.print("BT: ");
-    lcd.print(voltimeter.getVoltage());
-    lcd.print("V");
+    lcd.showVoltage(voltimeter.getVoltage());
   }
 }
 
@@ -134,9 +127,7 @@ void state_running()
   if (controller.isSelectReleased() && state.bounced())
   {
     state.setSetupState();
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("SETUP");
+    lcd.showState(state);
     return;
   }
 
@@ -147,19 +138,15 @@ void state_running()
 
   if (allowDisplayConnected)
   {
-    lcd.setCursor(0, 0);
-    lcd.print("C ");
+    lcd.showConnected();
     allowDisplayConnected = false;
   }
 
   int rate = radio.getConnectionSpeedRate();
   if (lastConnectionSpeedRate != rate)
   {
-    lcd.setCursor(2, 0);
-    char rate[4];
-    toStringWithPadding(rate, connectionSpeedRate, 3, ' ');
-    lcd.print(rate);
-    lcd.print("p/s");
+    lcd.showConnectionSpeed(rate);
+    lastConnectionSpeedRate = rate;
   }
 }
 
@@ -175,25 +162,67 @@ void state_setup()
 
   led.on();
   lastRotation = handle_rotation(controller.getYaw(), lastRotation, rotationMiddle);
-  lcd.setCursor(3, 1);
-  lcd.print(lastRotation);
-  lcd.print("   ");
+  lcd.showRotation(lastRotation);
 
   if (controller.isStartReleased())
   {
     rotationMiddle = lastRotation;
     store_rotation_middle(rotationMiddle);
-    lcd.setCursor(0, 1);
-    lcd.print("Saved!");
+    lcd.showSaved();
+  }
+}
+
+void state_disconnected()
+{
+  led.slowBlink();
+  allowDisplayConnected = true;
+
+  lastRotation = handle_rotation(rotationMiddle, lastRotation, rotationMiddle);
+  lastSpeed = handle_direction(0, 0, lastSpeed);
+
+  if (allowDisplayNotConnected)
+  {
+    lcd.showDisconnected();
+    allowDisplayNotConnected = false;
+  }
+}
+
+void execute_state()
+{
+  if (state.isRunning())
+  {
+    state_running();
+  }
+  else if (state.isSetup())
+  {
+    state_setup();
+  }
+  else if (state.isDisconnected())
+  {
+    state_disconnected();
+  }
+}
+
+void set_state_from_connection(bool connected)
+{
+  if (connected)
+  {
+    allowDisplayNotConnected = true;
+    if (state.isDisconnected())
+    {
+      state.setRunningState();
+    }
+  }
+  else
+  {
+    state.setDisconnectedState();
   }
 }
 
 void setup()
 {
-  lcd.init();
-  lcd.backlight();
-  lcd.setCursor(0, 0);
-  lcd.print("Initializing");
+  lcd.initialize();
+  lcd.showState(state);
   voltimeter.initialize();
   led.initialize();
   led.on();
@@ -204,37 +233,18 @@ void setup()
   delay(1000);
   led.off();
   lcd.clear();
-  state.setRunningState();
+  state.setDisconnectedState();
 }
 
 void loop()
 {
   if (radio.isInitialized() && radio.available())
   {
-    allowDisplayNotConnected = true;
     radio.read(&payload);
     controller.load_state_from_payload(payload);
-
-    if (state.isRunning())
-    {
-      state_running();
-    } else if (state.isSetup())
-    {
-      state_setup();
-    }
-  }
-  else
-  {
-    led.slowBlink();
-    allowDisplayConnected = true;
-
-    if (state.isRunning() && allowDisplayNotConnected)
-    {
-      lcd.setCursor(0, 0);
-      lcd.print("?               ");
-      allowDisplayNotConnected = false;
-    }
   }
 
+  set_state_from_connection(radio.isConnected());
+  execute_state();
   handle_voltimeter();
 }

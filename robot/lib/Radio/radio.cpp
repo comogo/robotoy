@@ -79,7 +79,7 @@ void Radio::read(void *payload)
 
 bool Radio::isConnected()
 {
-  return m_initialized && m_connected;
+  return isInitialized() && m_connected;
 }
 
 bool Radio::isInitialized()
