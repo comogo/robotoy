@@ -2,12 +2,12 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <Wire.h>
-#include <oled/SSD1306Wire.h>
+#include <Display.h>
 #include <Radio.h>
 #include <utils.h>
 
 #define CPU_FREQUENCY 240
-#define TELEMETRY_PACKET_RATE 2
+#define TELEMETRY_PACKET_RATE 16
 #define CONTROLLER_ID 0xA0
 #define MY_ID 0xB0
 
@@ -21,7 +21,7 @@ struct ControllerState
   bool buttonB;
 };
 
-SSD1306Wire *gDisplay;
+Display *gDisplay;
 Radio *gRadio;
 ControllerState gControllerState = {
   .leftStickX = 0,
@@ -45,20 +45,19 @@ bool receiveControllerData();
 void setup()
 {
   setCpuFrequencyMhz(CPU_FREQUENCY);
-  pinMode(LED, OUTPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
 
   // Disable Vext
   pinMode(Vext, OUTPUT);
   digitalWrite(Vext, HIGH);
 
-  gDisplay = new SSD1306Wire(0x3c, SDA_OLED, SCL_OLED, RST_OLED, GEOMETRY_128_64);
+  Wire.begin(SDA_OLED, SCL_OLED, 700000U);
+  gDisplay = new Display();
   gRadio = new Radio(MY_ID);
 
   // Setup Display
-  gDisplay->init();
-  gDisplay->flipScreenVertically();
-  gDisplay->setFont(ArialMT_Plain_10);
-  gDisplay->setBrightness(255);
+  gDisplay->begin();
 
   // Setup Radio
   gRadio->begin();
@@ -66,14 +65,14 @@ void setup()
   Serial.begin(115200);
   delay(1000);
 
-  // xTaskCreatePinnedToCore(
-  //     handleDisplayLoop,   /* Function to implement the task */
-  //     "handleDisplayLoop", /* Name of the task */
-  //     10000,               /* Stack size in words */
-  //     NULL,                /* Task input parameter */
-  //     10,                   /* Priority of the task */
-  //     NULL,                /* Task handle. */
-  //     PRO_CPU_NUM);        /* Core where the task should run */
+  xTaskCreatePinnedToCore(
+      handleDisplayLoop,   /* Function to implement the task */
+      "handleDisplayLoop", /* Name of the task */
+      10000,               /* Stack size in words */
+      NULL,                /* Task input parameter */
+      10,                   /* Priority of the task */
+      NULL,                /* Task handle. */
+      PRO_CPU_NUM);        /* Core where the task should run */
 }
 
 void loop()
@@ -89,8 +88,7 @@ void loop()
     }
   }
 
-
-  displayData();
+  // displayData();
 }
 
 void handleDisplayLoop(void *parameter)
@@ -98,7 +96,7 @@ void handleDisplayLoop(void *parameter)
   while(true)
   {
     displayData();
-    delay(10);
+    delay(50);
   }
 }
 
@@ -160,6 +158,7 @@ bool receiveControllerData()
     }
 
     gLastPacketId = packet.id;
+
     return true;
   }
 

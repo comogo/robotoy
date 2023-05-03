@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <SPI.h>
-#include <lora/LoRa.h>
+#include <LoRa.h>
 #include <utils/packet.h>
 
 #define RADIO_FREQUENCY 915E6

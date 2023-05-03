@@ -21,8 +21,8 @@ Controller::Controller(bool invertAxis = false) {
   pinMode(CONTROLLER_RIGHT_STICK_X, INPUT);
   pinMode(CONTROLLER_BUTTON_A, INPUT_PULLUP);
   pinMode(CONTROLLER_BUTTON_B, INPUT_PULLUP);
-  pinMode(CONTROLLER_BUTTON_C, INPUT_PULLUP);
-  pinMode(CONTROLLER_BUTTON_D, INPUT_PULLUP);
+  // pinMode(CONTROLLER_BUTTON_C, INPUT_PULLUP);
+  // pinMode(CONTROLLER_BUTTON_D, INPUT_PULLUP);
   analogSetPinAttenuation(CONTROLLER_LEFT_STICK_Y, ADC_11db);
   analogSetPinAttenuation(CONTROLLER_LEFT_STICK_X, ADC_11db);
   analogSetPinAttenuation(CONTROLLER_RIGHT_STICK_Y, ADC_11db);
@@ -90,8 +90,8 @@ void Controller::read() {
   mRightStickX = normalizeAnalogValue(analogRead(CONTROLLER_RIGHT_STICK_X), mRightStickXCalibration);
   mButtonA = digitalRead(CONTROLLER_BUTTON_A) == LOW;
   mButtonB = digitalRead(CONTROLLER_BUTTON_B) == LOW;
-  mButtonC = digitalRead(CONTROLLER_BUTTON_C) == LOW;
-  mButtonD = digitalRead(CONTROLLER_BUTTON_D) == LOW;
+  // mButtonC = digitalRead(CONTROLLER_BUTTON_C) == LOW;
+  // mButtonD = digitalRead(CONTROLLER_BUTTON_D) == LOW;
 }
 
 int8_t Controller::getLeftStickY() {

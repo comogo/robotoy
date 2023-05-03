@@ -2,7 +2,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <Wire.h>
-#include <oled/SSD1306Wire.h>
+#include <Display.h>
 #include <Controller.h>
 #include <Radio.h>
 #include <utils.h>
@@ -11,6 +11,7 @@
 #define MY_ID 0xA0
 #define RECEIVER_ID 0xB0
 #define RADIO_CONNECTION_TIMEOUT 500
+#define BAT_VOLTAGE_PIN GPIO_NUM_37
 
 struct TelemetryData
 {
@@ -19,7 +20,7 @@ struct TelemetryData
   float snr;
 };
 
-SSD1306Wire *gDisplay;
+Display *gDisplay;
 Controller *gController;
 Radio *gRadio;
 TelemetryData gTelemetryData;
@@ -31,6 +32,7 @@ uint32_t gLostPacketCounter = 0;
 uint32_t gReceivedPacketCounter = 0;
 uint32_t gSentPacketCounter = 0;
 uint32_t gLastPacketId = 0;
+float gBatteryVoltage = 0.0;
 
 
 void sendControllerData();
@@ -41,20 +43,24 @@ bool tryReadData(uint8_t times = 1);
 void setup()
 {
   setCpuFrequencyMhz(CPU_FREQUENCY);
-  pinMode(LED, OUTPUT);
+  analogSetAttenuation(ADC_11db);
+  analogSetPinAttenuation(BAT_VOLTAGE_PIN, ADC_11db);
+  pinMode(BAT_VOLTAGE_PIN, INPUT);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
 
-  // Enable Vext
+  // Disable Vext
   pinMode(Vext, OUTPUT);
-  digitalWrite(Vext, LOW);
+  digitalWrite(Vext, HIGH);
 
-  gDisplay = new SSD1306Wire(0x3c, SDA_OLED, SCL_OLED, RST_OLED, GEOMETRY_128_64);
+  Wire.begin(SDA_OLED, SCL_OLED, 700000U);
+  gDisplay = new Display();
   gController = new Controller(true);
   gRadio = new Radio(MY_ID);
 
   // Setup Display
-  gDisplay->init();
-  gDisplay->flipScreenVertically();
-  gDisplay->setFont(ArialMT_Plain_10);
+  gDisplay->begin();
+  gDisplay->flip();
 
   // Setup Radio
   gRadio->begin();
@@ -79,17 +85,19 @@ void loop()
 {
   xSemaphoreTake(gControllerMutex, portMAX_DELAY);
   gController->read();
+  gBatteryVoltage = (analogRead(BAT_VOLTAGE_PIN) * 0.769 + 150) / 1000.0;
   xSemaphoreGive(gControllerMutex);
 
   sendControllerData();
 
-  if (tryReadData(100))
+  if (tryReadData(30))
   {
     gConnected = true;
     gLastReceivedPacket = millis();
+    gLostPacketCounter = 0;
   }
 
-  if (gConnected && millis() - gLastReceivedPacket > RADIO_CONNECTION_TIMEOUT)
+  if (gConnected && gLostPacketCounter > 3)
   {
     gConnected = false;
   }
@@ -106,27 +114,24 @@ void handleDisplayLoop(void *parameter)
 
     if (gConnected)
     {
-      gDisplay->drawString(0, 0, "Connected!");
-
       xSemaphoreTake(gTelemetryMutex, portMAX_DELAY);
-      gDisplay->drawString(0, 10, "R Bat: " + String(gTelemetryData.batteryLevel));
-      gDisplay->drawString(0, 20, "RSSI: " + String(gTelemetryData.rssi));
-      gDisplay->drawString(0, 30, "SNR: " + String(gTelemetryData.snr));
+      gDisplay->drawString(0, 0, "Bat: " + String(gBatteryVoltage) + " R Bat: " + String(gTelemetryData.batteryLevel));
+      gDisplay->drawString(0, 10, "RSSI: " + String(gTelemetryData.rssi));
+      gDisplay->drawString(0, 20, "SNR: " + String(gTelemetryData.snr));
       xSemaphoreGive(gTelemetryMutex);
     }
     else
     {
-      gDisplay->drawString(0, 0, "Disconnected!");
-
+      gDisplay->drawString(0, 0, "Bat: " + String(gBatteryVoltage));
       xSemaphoreTake(gControllerMutex, portMAX_DELAY);
-      gDisplay->drawString(0, 10, "BTN 1: " + String(gController->getButtonA()) + " BTN 2: " + String(gController->getButtonB()));
-      gDisplay->drawString(0, 20, "Axis L X: " + String(gController->getLeftStickX()) + " Y: " + String(gController->getLeftStickY()));
-      gDisplay->drawString(0, 30, "Axis R X: " + String(gController->getRightStickX()) + " Y: " + String(gController->getRightStickY()));
+      gDisplay->drawString(0, 0, "BTN 1: " + String(gController->getButtonA()) + " BTN 2: " + String(gController->getButtonB()));
+      gDisplay->drawString(0, 10, "Axis L X: " + String(gController->getLeftStickX()) + " Y: " + String(gController->getLeftStickY()));
+      gDisplay->drawString(0, 20, "Axis R X: " + String(gController->getRightStickX()) + " Y: " + String(gController->getRightStickY()));
       xSemaphoreGive(gControllerMutex);
     }
 
-    gDisplay->drawString(0, 40, "Lost pkg: " + String(gLostPacketCounter));
-    gDisplay->drawString(0, 50, "in: " + String(gReceivedPacketCounter) + " out: " + String(gSentPacketCounter));
+    gDisplay->drawString(0, 30, "Lost pkg: " + String(gLostPacketCounter));
+    gDisplay->drawString(0, 40, "in: " + String(gReceivedPacketCounter) + " out: " + String(gSentPacketCounter));
 
     gDisplay->display();
     delay(50);
@@ -167,6 +172,8 @@ void sendControllerData()
   };
 
   gRadio->sendPacket(packet);
+  gRadio->sendPacket(packet, true);
+  gRadio->sendPacket(packet, true);
 }
 
 bool readData()
@@ -214,13 +221,11 @@ bool tryReadData(uint8_t times)
   {
     if (readData())
     {
-      Serial.println("R " + String(i) + " pid: " + String(gSentPacketCounter) + "c: " + String(i) + " d: " + String(millis() - startTime) + "ms");
-
       return true;
     }
     i = increment(i);
 
-    if (millis() - startTime > 40)
+    if (millis() - startTime > 30)
     {
       stop = true;
     }
