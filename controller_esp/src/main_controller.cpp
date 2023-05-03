@@ -5,27 +5,38 @@
 #include <oled/SSD1306Wire.h>
 #include <Controller.h>
 #include <Radio.h>
+#include <utils.h>
 
 #define CPU_FREQUENCY 240
 #define MY_ID 0xA0
 #define RECEIVER_ID 0xB0
+#define RADIO_CONNECTION_TIMEOUT 500
+
+struct TelemetryData
+{
+  float batteryLevel;
+  int rssi;
+  float snr;
+};
 
 SSD1306Wire *gDisplay;
 Controller *gController;
 Radio *gRadio;
-TelemetryData gResponse;
-SemaphoreHandle_t gResponseMutex = xSemaphoreCreateMutex();
+TelemetryData gTelemetryData;
+SemaphoreHandle_t gTelemetryMutex = xSemaphoreCreateMutex();
 SemaphoreHandle_t gControllerMutex = xSemaphoreCreateMutex();
-uint32_t gLostPackageCounter;
-bool gConnected;
-bool gWaitingResponse;
-unsigned long gLastReceivedPackage;
-unsigned long gLastTelemetryRequestedAt;
+bool gConnected = false;
+unsigned long gLastReceivedPacket = 0;
+uint32_t gLostPacketCounter = 0;
+uint32_t gReceivedPacketCounter = 0;
+uint32_t gSentPacketCounter = 0;
+uint32_t gLastPacketId = 0;
 
 
+void sendControllerData();
 bool readData();
-void incrementLostPackageCounter();
 void handleDisplayLoop(void *parameter);
+bool tryReadData(uint8_t times = 1);
 
 void setup()
 {
@@ -39,11 +50,6 @@ void setup()
   gDisplay = new SSD1306Wire(0x3c, SDA_OLED, SCL_OLED, RST_OLED, GEOMETRY_128_64);
   gController = new Controller(true);
   gRadio = new Radio(MY_ID);
-  gLostPackageCounter = 0;
-  gConnected = false;
-  gWaitingResponse = false;
-  gLastReceivedPackage = 0;
-  gLastTelemetryRequestedAt = 0;
 
   // Setup Display
   gDisplay->init();
@@ -71,39 +77,25 @@ void setup()
 
 void loop()
 {
-  if (gWaitingResponse && millis() - gLastTelemetryRequestedAt > RADIO_TELEMETRY_TIMEOUT)
+  xSemaphoreTake(gControllerMutex, portMAX_DELAY);
+  gController->read();
+  xSemaphoreGive(gControllerMutex);
+
+  sendControllerData();
+
+  if (tryReadData(100))
   {
-    gWaitingResponse = false;
-    incrementLostPackageCounter();
+    gConnected = true;
+    gLastReceivedPacket = millis();
   }
 
-  if (gWaitingResponse)
-  {
-    if (readData())
-    {
-      gConnected = true;
-      gLastReceivedPackage = millis();
-      gWaitingResponse = false;
-      gLostPackageCounter = 0;
-    }
-  } else {
-    xSemaphoreTake(gControllerMutex, portMAX_DELAY);
-    gController->read();
-    xSemaphoreGive(gControllerMutex);
-
-    RequestType requestType = gRadio->sendRequest(RECEIVER_ID, gController->getLeftStickX(), gController->getLeftStickY(), gController->getRightStickX(), gController->getRightStickY(), gController->getButtonA(), gController->getButtonB());
-
-    if (requestType == RequestType::TELEMETRY_DATA)
-    {
-      gLastTelemetryRequestedAt = millis();
-      gWaitingResponse = true;
-    }
-  }
-
-  if (gConnected && millis() - gLastReceivedPackage > RADIO_CONNECTION_TIMEOUT)
+  if (gConnected && millis() - gLastReceivedPacket > RADIO_CONNECTION_TIMEOUT)
   {
     gConnected = false;
   }
+
+  gSentPacketCounter = gRadio->getSentPacketCounter();
+  gReceivedPacketCounter = gRadio->getReceivedPacketCounter();
 }
 
 void handleDisplayLoop(void *parameter)
@@ -116,11 +108,11 @@ void handleDisplayLoop(void *parameter)
     {
       gDisplay->drawString(0, 0, "Connected!");
 
-      xSemaphoreTake(gResponseMutex, portMAX_DELAY);
-      gDisplay->drawString(0, 10, "R Bat: " + String(gResponse.batteryLevel));
-      gDisplay->drawString(0, 20, "RSSI: " + String(gResponse.rssi));
-      gDisplay->drawString(0, 30, "SNR: " + String(gResponse.snr));
-      xSemaphoreGive(gResponseMutex);
+      xSemaphoreTake(gTelemetryMutex, portMAX_DELAY);
+      gDisplay->drawString(0, 10, "R Bat: " + String(gTelemetryData.batteryLevel));
+      gDisplay->drawString(0, 20, "RSSI: " + String(gTelemetryData.rssi));
+      gDisplay->drawString(0, 30, "SNR: " + String(gTelemetryData.snr));
+      xSemaphoreGive(gTelemetryMutex);
     }
     else
     {
@@ -133,35 +125,106 @@ void handleDisplayLoop(void *parameter)
       xSemaphoreGive(gControllerMutex);
     }
 
-    gDisplay->drawString(0, 40, "Lost pkg: " + String(gLostPackageCounter));
+    gDisplay->drawString(0, 40, "Lost pkg: " + String(gLostPacketCounter));
+    gDisplay->drawString(0, 50, "in: " + String(gReceivedPacketCounter) + " out: " + String(gSentPacketCounter));
 
     gDisplay->display();
     delay(50);
   }
 }
 
-void incrementLostPackageCounter()
+void sendControllerData()
 {
-  if (gLostPackageCounter == UINT32_MAX)
+  uint8_t leftX = (uint8_t)gController->getLeftStickX();
+  uint8_t leftY = (uint8_t)gController->getLeftStickY();
+  uint8_t rightX = (uint8_t)gController->getRightStickX();
+  uint8_t rightY = (uint8_t)gController->getRightStickY();
+  uint8_t buttons = 0;
+
+  if (gController->getButtonA())
   {
-    gLostPackageCounter = 0;
+    buttons |= 0x01;
   }
-  else
+
+  if (gController->getButtonB())
   {
-    gLostPackageCounter++;
+    buttons |= 0x02;
   }
+
+  uint8_t payload[5] = {
+    leftX,
+    leftY,
+    rightX,
+    rightY,
+    buttons
+  };
+
+  Packet packet = {
+      .address = RECEIVER_ID,
+      .type = PacketType::CONTROLLER_DATA,
+      .payload = payload,
+      .size = 5
+  };
+
+  gRadio->sendPacket(packet);
 }
 
 bool readData()
 {
-  TelemetryResponse response = gRadio->receiveTelemetryResponse();
+  uint8_t payload[200] = {0};
+  Packet packet;
+  packet.payload = payload;
 
-  if (response.valid)
+  if (gRadio->receivePacket(&packet))
   {
-    xSemaphoreTake(gResponseMutex, portMAX_DELAY);
-    gResponse = response.data;
-    xSemaphoreGive(gResponseMutex);
+    if (packet.type == PacketType::TELEMETRY_DATA)
+    {
+      UFloatByte_t uBatteryLevel;
+      uBatteryLevel.b[0] = packet.payload[0];
+      uBatteryLevel.b[1] = packet.payload[1];
+      uBatteryLevel.b[2] = packet.payload[2];
+      uBatteryLevel.b[3] = packet.payload[3];
+
+      xSemaphoreTake(gTelemetryMutex, portMAX_DELAY);
+      gTelemetryData.batteryLevel = uBatteryLevel.f;
+      gTelemetryData.rssi = gRadio->getRSSI();
+      gTelemetryData.snr = gRadio->getSNR();
+      xSemaphoreGive(gTelemetryMutex);
+    }
+
+    if (gLastPacketId != packet.previousPacketId)
+    {
+      gLostPacketCounter = increment(gLostPacketCounter);
+    }
+
+    gLastPacketId = packet.id;
+
+    return true;
   }
 
-  return response.valid;
+  return false;
+}
+
+bool tryReadData(uint8_t times)
+{
+  bool stop = false;
+  unsigned long startTime = millis();
+  uint32_t i = 1;
+  while(!stop)
+  {
+    if (readData())
+    {
+      Serial.println("R " + String(i) + " pid: " + String(gSentPacketCounter) + "c: " + String(i) + " d: " + String(millis() - startTime) + "ms");
+
+      return true;
+    }
+    i = increment(i);
+
+    if (millis() - startTime > 40)
+    {
+      stop = true;
+    }
+  }
+
+  return false;
 }
